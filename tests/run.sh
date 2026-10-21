@@ -2,7 +2,7 @@
 # Usage: bash tests/run.sh   Runs every check offline, in temporary folders, with the stand-in reviewer.
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-while IFS= read -r v; do unset "$v"; done < <(compgen -e | grep -E '^(GIT_|STANDIN_|REVIEW|BUILDER$|GATE_CMD$|PREFIX$|KEEP$|DEMO_REAL$)' || true)
+while IFS= read -r v; do unset "$v"; done < <(compgen -e | grep -E '^(GIT_|STANDIN_|REVIEW|BUILDER$|GATE_(CMD|MIN_TESTS|COUNT_RE)$|PREFIX$|KEEP$|DEMO_REAL$)' || true)
 tmp="$(mktemp -d)" || exit 1
 trap 'rm -rf "$tmp"' EXIT
 export GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null HOME="$tmp/home" TMPDIR="$tmp/tmp"
@@ -85,21 +85,52 @@ want 1 "HEAD is the base" env REVIEW_BASE=HEAD "$R"
 echo "== gate.sh"
 G="$ROOT/bin/gate.sh"; rec=".ai/tests/$head.pass"
 want 1 "no GATE_CMD" "$G"
-want 0 "passing command" env GATE_CMD="true" "$G"; [ -f "$rec" ] && ok || bad "no pass record after a pass"
+want 0 "passing command" env GATE_CMD="echo ok" "$G"; [ -f "$rec" ] && ok || bad "no pass record after a pass"
 want 3 "failing command" env GATE_CMD="exit 3" "$G"; [ ! -e "$rec" ] && ok || bad "the pass record survived a failure"
-env GATE_CMD=true "$G" >/dev/null 2>&1; want 1 "rerun without GATE_CMD" "$G"
+env GATE_CMD="echo ok" "$G" >/dev/null 2>&1; want 1 "rerun without GATE_CMD" "$G"
 [ ! -e "$rec" ] && ok || bad "a rerun without GATE_CMD kept the old pass record"
 want 1 "command leaves an untracked file" env GATE_CMD="touch stray.txt" "$G"; rm -f stray.txt
 [ ! -e "$rec" ] && ok || bad "a run with an untracked file wrote a pass record"
 
+echo "== gate.sh: a run of zero tests is not a pass"
+zt() { # zt <exit> <label> <output, printf %b> [VAR=value...]: gate.sh on a command that prints <output>
+  local code="$1" label="$2"; printf '%b' "$3" > "$tmp/zt.txt"; shift 3
+  want "$code" "$label" env GATE_CMD="cat '$tmp/zt.txt'" "$@" "$G"
+  if [ "$code" = 0 ]; then [ -f "$rec" ] && ok || bad "$label: no pass record"
+  else [ ! -e "$rec" ] && ok || bad "$label: a pass record was written"; fi
+}
+zt 1 "empty output" ""
+zt 1 "pytest, no tests" "\n===== no tests ran in 0.01s =====\n"
+zt 1 "unittest, no tests" "Ran 0 tests in 0.000s\r\n\r\nNO TESTS RAN\r\n"
+zt 1 "node --test, no tests" "TAP version 13\n1..0\n# tests 0\n# pass 0\n"
+zt 1 "mocha, no tests" "\n  0 passing (2ms)\n"
+zt 1 "Jest, no tests" "No tests found, exiting with code 0\n"
+zt 1 "Vitest, no tests" "\n No test files found, exiting with code 0\n"
+zt 1 "node --test spec reporter, no tests" "\xe2\x84\xb9 tests 0\n\xe2\x84\xb9 pass 0\n"
+zt 1 "pytest, every test deselected" "==== 2 deselected in 0.01s ====\n"
+zt 1 "node --test, every test skipped" "# tests 1\n# pass 0\n# skipped 1\n"
+zt 1 "Jest, every test skipped" "Tests:       2 skipped, 2 total\n"
+zt 1 "Vitest, every test skipped" "      Tests  2 skipped (2)\n"
+zt 0 "summaries with tests that ran" "  10 passing (5ms)\nRan 10 tests in 0.01s\n1 passed, 1 deselected in 0.01s\n# tests 2\n# pass 1\nTests:       1 skipped, 1 passed, 2 total\n      Tests  1 passed | 1 skipped (2)\n"
+zt 0 "zero-test check off" "" GATE_MIN_TESTS=0
+count='^test result: ok\. ([0-9]+) passed'
+zt 0 "counts added up" "test result: ok. 2 passed; 0 failed\ntest result: ok. 0 passed; 0 failed\n" GATE_COUNT_RE="$count"
+zt 1 "count of zero" "test result: ok. 0 passed; 0 failed\r\n" GATE_COUNT_RE="$count"
+zt 1 "no counted line" "all good\n" GATE_COUNT_RE="$count"
+zt 1 "fewer than GATE_MIN_TESTS" "test result: ok. 2 passed\n" GATE_COUNT_RE="$count" GATE_MIN_TESTS=3
+zt 0 "a match without a group counts one" "--- PASS: TestA\n--- PASS: TestB\n" GATE_COUNT_RE='^--- PASS' GATE_MIN_TESTS=2
+zt 1 "group 1 is not a number" "tests: many\n" GATE_COUNT_RE='^tests: (.*)'
+zt 1 "bad GATE_MIN_TESTS" "ok\n" GATE_MIN_TESTS=one
+zt 1 "invalid GATE_COUNT_RE" "ok\n" GATE_COUNT_RE='('
+
 echo "== merge-check.sh"
 M="$ROOT/bin/merge-check.sh"
-env GATE_CMD=true "$G" >/dev/null 2>&1; env STANDIN_ANSWER=accept "$R" >/dev/null 2>&1
+env GATE_CMD="echo ok" "$G" >/dev/null 2>&1; env STANDIN_ANSWER=accept "$R" >/dev/null 2>&1
 want 0 "pass and accept" "$M"
 sed -i 's/^Builder: claude/Builder: codex/' "$v"; want 1 "builder equals reviewer" "$M"
 env STANDIN_ANSWER=changes "$R" >/dev/null 2>&1; want 1 "changes required" "$M"
 env STANDIN_ANSWER=accept "$R" >/dev/null 2>&1; echo three >> a.txt; git commit -qam "fix: third line"
-cp "$v" ".ai/reviews/$(git rev-parse --short=12 HEAD).md"; env GATE_CMD=true "$G" >/dev/null 2>&1
+cp "$v" ".ai/reviews/$(git rev-parse --short=12 HEAD).md"; env GATE_CMD="echo ok" "$G" >/dev/null 2>&1
 want 1 "verdict copied from an older commit" "$M"
 
 echo "== install and uninstall on a scratch HOME"
