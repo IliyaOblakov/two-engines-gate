@@ -141,6 +141,13 @@ want 1 "uninstall keeps a folder with a foreign file" env HOME="$h" PREFIX="$h/.
 rm "$h/.local/bin/other"
 want 0 "a second uninstall finishes the job" env HOME="$h" PREFIX="$h/.local" bash "$ROOT/uninstall.sh"
 [ -z "$(ls -A "$h")" ] && ok || bad "the second uninstall left files behind"
+h="$tmp/home-top"; mkdir -p "$h"
+env HOME="$h" PREFIX="$h/.local" bash "$ROOT/install.sh" >/dev/null 2>&1; echo mine > "$h/.local/other"
+want 1 "uninstall keeps PREFIX with a foreign file in it" env HOME="$h" PREFIX="$h/.local" bash "$ROOT/uninstall.sh"
+grep -qx "D $h/.local/share" "$h/.local/share/two-engines-gate/install-manifest" && ok || bad "a recreated folder is missing from the manifest"
+rm "$h/.local/other"
+want 0 "a second uninstall removes every recreated folder" env HOME="$h" PREFIX="$h/.local" bash "$ROOT/uninstall.sh"
+[ -z "$(ls -A "$h")" ] && ok || bad "the second uninstall left folders behind"
 if [ "$(id -u)" != 0 ]; then
   h="$tmp/home-locked"; mkdir -p "$h/.local/bin"
   env HOME="$h" PREFIX="$h/.local" bash "$ROOT/install.sh" >/dev/null 2>&1; chmod 555 "$h/.local/bin"

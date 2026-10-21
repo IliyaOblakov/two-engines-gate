@@ -31,7 +31,7 @@ Exit codes of review.sh: 0 for `Verdict: ACCEPT`, 2 for `Verdict: CHANGES REQUIR
 
 ## Install
 
-From a clone, run `bash install.sh`. It copies the scripts and the review prompt to `~/.local/share/two-engines-gate` and adds `two-engines-review`, `two-engines-gate` and `two-engines-merge-check` to `~/.local/bin` (`PREFIX` changes `~/.local`). It stops without changing anything when one of those files already exists. `bash uninstall.sh` removes exactly what the install created; a file edited after the install is kept and reported.
+From a clone, run `bash install.sh`. It copies the scripts and the review prompt to `~/.local/share/two-engines-gate` and adds `two-engines-review`, `two-engines-gate` and `two-engines-merge-check` to `~/.local/bin` (`PREFIX` changes `~/.local`). It stops without changing anything when one of those files already exists. `bash uninstall.sh` removes exactly what the install created; a file edited after the install, or a folder that also holds other files, is kept and reported, and running it again after dealing with those finishes the job.
 
 No install is needed to use it: every script runs from the clone, for example `path/to/two-engines-gate/bin/review.sh`.
 
