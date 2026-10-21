@@ -22,7 +22,7 @@ BUILDER=codex bash demo.sh
 The demo builds a throwaway repository in a temporary folder and walks through one change: a commit with a bug the tests miss, the merge check refusing, a CHANGES REQUIRED review, a fix commit whose old evidence no longer counts, then tests and an ACCEPT on the new commit and the merge. A stand-in answers as the reviewer, so no model is called. `DEMO_REAL=1 bash demo.sh` calls the real reviewer CLI instead. The folder is removed at the end (`KEEP=1` keeps it).
 
 <details>
-<summary>Output of one run of <code>bash demo.sh</code> (commit hashes and dates differ on every run)</summary>
+<summary>Output of one run of <code>bash demo.sh</code> (commit hashes and dates may differ between runs)</summary>
 
 ```
 Reviewer is the other engine: BUILDER=claude. Repository: a throwaway copy in a temp folder.
