@@ -13,8 +13,8 @@ root="$(git rev-parse --show-toplevel 2>/dev/null)" || refuse "not a git reposit
 cd "$root" || exit 1
 head="$(git rev-parse --verify HEAD 2>/dev/null)" || refuse "no commit"
 short="${head:0:12}"
-[ -z "$(git status --porcelain --untracked-files=all -- . ':(exclude).ai')" ] \
-  || refuse "uncommitted changes or untracked files"
+status="$(git status --porcelain --untracked-files=all -- . ':(exclude).ai')" || refuse "git status failed"
+[ -z "$status" ] || refuse "uncommitted changes or untracked files"
 record=".ai/tests/$head.pass"
 [ -f "$record" ] || refuse "no test pass record for $short; run gate.sh"
 [ "$(sed -n 's/^Head: //p' "$record")" = "$head" ] || refuse "the pass record $record is not for $head"
@@ -25,7 +25,6 @@ builder="$(sed -n 's/^Builder: //p' "$verdict" | head -n 1)"
 reviewer="$(sed -n 's/^Reviewer: //p' "$verdict" | head -n 1)"
 [ -n "$builder" ] && [ -n "$reviewer" ] && [ "$builder" != "$reviewer" ] \
   || refuse "the verdict for $short does not name two different engines"
-accepts="$(grep -cE '^Verdict: *ACCEPT *$' "$verdict")"
-changes="$(grep -cE '^Verdict: *CHANGES REQUIRED *$' "$verdict")"
-[ "$accepts" -eq 1 ] && [ "$changes" -eq 0 ] || refuse "the verdict for $short is not ACCEPT"
+[ "$(grep -c '^Verdict:' "$verdict")" -eq 1 ] && grep -qE '^Verdict: *ACCEPT *$' "$verdict" \
+  || refuse "the verdict for $short is not a single ACCEPT"
 echo "merge-check: OK: $short has a test pass and an ACCEPT from $reviewer (builder $builder)"

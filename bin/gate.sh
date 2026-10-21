@@ -8,22 +8,24 @@
 set -uo pipefail
 case "${1:-}" in -h|--help) sed -n '2,7p' "$0"; exit 0 ;; esac
 die() { echo "gate: $*" >&2; exit 1; }
-[ -n "${GATE_CMD:-}" ] || die "set GATE_CMD to your test command, for example GATE_CMD='npm test'"
 cd "${1:-.}" || exit 1
 root="$(git rev-parse --show-toplevel 2>/dev/null)" || die "not a git repository"
 cd "$root" || exit 1
 head="$(git rev-parse --verify HEAD 2>/dev/null)" || die "no commit to test"
-changes() { git status --porcelain --untracked-files=all -- . ':(exclude).ai'; }
+clean() { # fails on changed or untracked files outside .ai/, and when git status itself fails
+  local out; out="$(git status --porcelain --untracked-files=all -- . ':(exclude).ai')" && [ -z "$out" ]
+}
 dir=".ai/tests" record=".ai/tests/$head.pass" log=".ai/tests/${head:0:12}.log"
 mkdir -p "$dir" || die "cannot create $dir"
 rm -f "$record"; [ ! -e "$record" ] || die "cannot remove the earlier pass record $record"
-[ -z "$(changes)" ] || die "REFUSED: uncommitted changes or untracked files; commit or remove them first"
+[ -n "${GATE_CMD:-}" ] || die "set GATE_CMD to the test command, for example GATE_CMD='npm test'"
+clean || die "REFUSED: uncommitted changes or untracked files (or git status failed); commit or remove them first"
 echo "gate: running '$GATE_CMD' on ${head:0:12}"
 bash -c "$GATE_CMD" > "$log" 2>&1
 status=$?
 if [ "$status" -eq 0 ]; then
   if [ "$(git rev-parse HEAD)" != "$head" ]; then echo "gate: HEAD moved during the run" >&2; status=1
-  elif [ -n "$(changes)" ]; then echo "gate: the run left changed or untracked files" >&2; status=1
+  elif ! clean; then echo "gate: the run left changed or untracked files (or git status failed)" >&2; status=1
   fi
 fi
 if [ "$status" -eq 0 ]; then

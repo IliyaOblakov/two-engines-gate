@@ -2,7 +2,7 @@
 # Stand-in for the claude and codex CLIs, so demo.sh and tests/run.sh run without any model or account.
 # Copy or link it as "claude" and "codex" in a folder at the front of PATH. It reads the prompt and
 # answers from STANDIN_ANSWER: accept (default), changes, none (no verdict line), two (two verdict
-# lines) or fail (exit 1). STANDIN_FINDING replaces the default finding text, STANDIN_TOUCH names a
+# lines), odd (ACCEPT plus an unknown verdict line) or fail (exit 1). STANDIN_FINDING replaces the default finding text, STANDIN_TOUCH names a
 # file to create during the review, STANDIN_PROMPT_COPY saves the prompt it received, and
 # STANDIN_NO_RESTRICTED=1 leaves --restricted out of the claude help text.
 set -uo pipefail
@@ -27,6 +27,7 @@ case "${STANDIN_ANSWER:-accept}" in
   changes) answer="$intro"$'\n\nVerdict: CHANGES REQUIRED\n\n'"- $finding" ;;
   none) answer="$intro"$'\n\nLooks fine overall.' ;;
   two) answer="$intro"$'\n\nVerdict: ACCEPT\nVerdict: CHANGES REQUIRED' ;;
+  odd) answer="$intro"$'\n\nVerdict: ACCEPT\nVerdict: UNKNOWN' ;;
   fail) echo "$name stand-in: simulated failure" >&2; exit 1 ;;
   *) echo "$name stand-in: unknown STANDIN_ANSWER" >&2; exit 1 ;;
 esac

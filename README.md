@@ -2,7 +2,7 @@
 
 A local review and merge gate for Claude Code and Codex. One engine writes the code; the other reviews the commit read-only and its verdict is saved under the exact commit it reviewed. The project's tests run on that same commit. `merge-check.sh` refuses unless HEAD has both a test pass and an ACCEPT.
 
-Requirements: bash 4 or newer and git. Real reviews also need the Claude Code and Codex CLIs, installed and logged in. The demo and the tests need neither CLI, no account and no network.
+Requirements: bash 4 or newer and git. Real reviews also need the Claude Code and Codex CLIs, installed and logged in. The demo and the tests need neither CLI, no account and no network. Tested on Linux (Ubuntu 24.04 under WSL2); `tests/run.sh` also needs GNU find and grep.
 
 Built on information gathered since the first Codex and Claude CLIs.
 
@@ -25,7 +25,7 @@ The demo builds a throwaway repository in a temporary folder and walks through o
 | `bin/gate.sh` | Runs `GATE_CMD` on a clean checkout. Records a pass only when the command passed and left the checkout unchanged. | `.ai/tests/<sha>.pass` |
 | `bin/merge-check.sh` | Refuses unless the checkout is clean and HEAD has a pass record and an ACCEPT from a reviewer that is not the builder. Never merges. | nothing |
 
-Why the verdict is named after the commit: an ACCEPT for an older commit can quietly cover code nobody reviewed. A new commit needs a new review and a new test run. Each script removes its earlier evidence for the commit before it runs, so a failed run never leaves an old pass or ACCEPT behind.
+Why the verdict is named after the commit: an ACCEPT for an older commit can quietly cover code nobody reviewed. A new commit needs a new review and a new test run. review.sh and gate.sh remove their earlier evidence for the commit before anything else, so a failed or refused run never leaves an old pass or ACCEPT behind.
 
 Exit codes of review.sh: 0 for `Verdict: ACCEPT`, 2 for `Verdict: CHANGES REQUIRED`, 1 when there is no verdict (the reviewer failed, the final message held no single verdict line, the checkout changed during the review, or a setting was wrong).
 
@@ -71,7 +71,7 @@ two-engines-merge-check && git switch main && git merge --ff-only <branch>
 
 ## Tests
 
-`bash tests/run.sh` runs offline with the stand-in reviewer: syntax checks, a content scan, the demo in both directions, every review.sh exit code, gate.sh and merge-check.sh refusals, and install and uninstall on a scratch HOME with a byte-for-byte comparison. The repository gates itself with `GATE_CMD="bash examples/local-check.sh"`.
+`bash tests/run.sh` runs offline with the stand-in reviewer: syntax checks, a content scan of the tracked files, the demo in both directions, every review.sh exit code, gate.sh and merge-check.sh refusals, and install and uninstall on scratch HOME folders with a byte-for-byte comparison. The repository gates itself with `GATE_CMD="bash examples/local-check.sh"`.
 
 ## Licence and the full kit
 

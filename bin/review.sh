@@ -15,9 +15,11 @@ case "${1:-}" in -h|--help) sed -n '2,13p' "$0"; exit 0 ;; esac
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 prompt_file="${REVIEW_PROMPT:-$HERE/review-prompt.md}"
 case "$prompt_file" in /*) ;; *) prompt_file="$PWD/$prompt_file" ;; esac
-cd "${1:-.}" || exit 1
 die() { echo "review: $*" >&2; exit 1; }
-head="$(git rev-parse --verify HEAD 2>/dev/null)" || die "not a git repository with a commit"
+cd "${1:-.}" || exit 1
+root="$(git rev-parse --show-toplevel 2>/dev/null)" || die "not a git repository"
+cd "$root" || exit 1
+head="$(git rev-parse --verify HEAD 2>/dev/null)" || die "no commit to review"
 dir=".ai/reviews" verdict=".ai/reviews/${head:0:12}.md"
 rm -f "$verdict"; [ ! -e "$verdict" ] || die "cannot remove the earlier verdict $verdict"
 
@@ -31,8 +33,10 @@ REVIEWER="${REVIEWER:-$other}"
 [ "$REVIEWER" = "$other" ] || die "the reviewer must be the other engine ($other), not '$REVIEWER'"
 [ -f "$prompt_file" ] || die "prompt file not found: $prompt_file"
 
-changes() { git status --porcelain --untracked-files=all -- . ':(exclude).ai'; }
-[ -z "$(changes)" ] || die "REFUSED: uncommitted changes or untracked files; commit or remove them first"
+clean() { # fails on changed or untracked files outside .ai/, and when git status itself fails
+  local out; out="$(git status --porcelain --untracked-files=all -- . ':(exclude).ai')" && [ -z "$out" ]
+}
+clean || die "REFUSED: uncommitted changes or untracked files (or git status failed); commit or remove them first"
 if [ -n "${REVIEW_BASE:-}" ]; then base="$REVIEW_BASE"
 elif git rev-parse -q --verify origin/main >/dev/null; then base=origin/main
 else base=main; fi
@@ -44,10 +48,10 @@ mkdir -p "$dir" || die "cannot create $dir"
 work="$(mktemp -d)" || die "cannot create a temporary folder"
 trap 'rm -rf "$work"' EXIT
 {
-  cat "$prompt_file"
-  printf '\n\n## Commits in %s..HEAD\n\n' "$base"
-  git log --no-color --format='commit %H%nAuthor: %an <%ae>%n%n%B' "$base..HEAD"
-  printf '\n## Diff %s...HEAD\n\n' "$base"
+  cat "$prompt_file" &&
+  printf '\n\n## Commits in %s..HEAD\n\n' "$base" &&
+  git log --no-color --format='commit %H%nAuthor: %an <%ae>%n%n%B' "$base..HEAD" &&
+  printf '\n## Diff %s...HEAD\n\n' "$base" &&
   git -c core.fsmonitor=false diff --no-color --no-ext-diff --no-textconv "$base...HEAD"
 } > "$work/prompt" || die "cannot build the prompt"
 model=(); [ -n "${REVIEW_MODEL:-}" ] && model=(--model "$REVIEW_MODEL")
@@ -68,10 +72,12 @@ fi
 echo "$REVIEWER exit $status" >> "$log"
 [ "$status" -eq 0 ] || die "REVIEW FAILED: $REVIEWER exited $status; no verdict for ${head:0:12} (log: $log)"
 [ "$(git rev-parse HEAD)" = "$head" ] || die "REVIEW VOID: HEAD moved during the review"
-[ -z "$(changes)" ] || die "REVIEW VOID: files changed during the review"
+clean || die "REVIEW VOID: files changed during the review (or git status failed)"
 [ -s "$work/last" ] || die "NO VERDICT: $REVIEWER wrote no final message"
-count="$(grep -cE '^Verdict: *(ACCEPT|CHANGES REQUIRED) *$' "$work/last")"
+count="$(grep -c '^Verdict:' "$work/last")"
 [ "$count" -eq 1 ] || die "NO VERDICT: the final message needs exactly one Verdict: line, found $count"
+grep -qE '^Verdict: *(ACCEPT|CHANGES REQUIRED) *$' "$work/last" \
+  || die "NO VERDICT: the Verdict: line must say ACCEPT or CHANGES REQUIRED"
 {
   echo "Head: $head"
   echo "Base: $(git rev-parse "$base") ($base)"

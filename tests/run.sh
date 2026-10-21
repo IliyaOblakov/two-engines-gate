@@ -2,7 +2,7 @@
 # Usage: bash tests/run.sh   Runs every check offline, in temporary folders, with the stand-in reviewer.
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-while IFS= read -r v; do unset "$v"; done < <(compgen -e | grep -E '^(GIT_|STANDIN_|REVIEW|BUILDER$|GATE_CMD$)' || true)
+while IFS= read -r v; do unset "$v"; done < <(compgen -e | grep -E '^(GIT_|STANDIN_|REVIEW|BUILDER$|GATE_CMD$|PREFIX$|KEEP$|DEMO_REAL$)' || true)
 tmp="$(mktemp -d)" || exit 1
 trap 'rm -rf "$tmp"' EXIT
 export GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null HOME="$tmp/home" TMPDIR="$tmp/tmp"
@@ -24,10 +24,16 @@ echo "== syntax"
 while IFS= read -r f; do want 0 "bash -n $f" bash -n "$f"; done < <(cd "$ROOT" && find . -name '*.sh' -not -path './.git/*' | sort | sed "s|^\.|$ROOT|")
 
 echo "== content"
-or_phrase="Claude Code"" or ""Codex"
-if grep -rnP '[\x{2013}\x{2014}\x{0400}-\x{04FF}]|/home/[a-z]|/Users/[A-Za-z]|\b\d{1,3}(\.\d{1,3}){3}\b|brain\.' "$ROOT" --exclude-dir=.git; then
-  bad "dash, Cyrillic, personal path, IP address or brain URL found"; else ok; fi
-if grep -rn "$or_phrase" "$ROOT" --exclude-dir=.git; then bad "write Claude Code and Codex"; else ok; fi
+files() { # tracked files in a clone, otherwise every file outside .git and .ai
+  (cd "$ROOT" && { git ls-files -z 2>/dev/null || find . -type f -not -path './.git/*' -not -path './.ai/*' -print0; })
+}
+scan() { # scan <label> <grep args...>: a match or a grep error is a failure
+  local list rc; mapfile -d '' list < <(files)
+  (cd "$ROOT" && grep -n "${@:2}" -- "${list[@]}"); rc=$?
+  case "$rc" in 1) ok ;; 0) bad "$1" ;; *) bad "$1: grep failed ($rc)" ;; esac
+}
+scan "dash, Cyrillic, personal path, IP address or brain URL found" -P -e '[\x{2013}\x{2014}\x{0400}-\x{04FF}]|/home/[a-z]|/Users/[A-Za-z]|\b\d{1,3}(\.\d{1,3}){3}\b|brain\.'
+scan "write Claude Code and Codex" -F -e "Claude Code"" or ""Codex"
 
 echo "== demo in both directions"
 for b in claude codex; do
@@ -55,6 +61,18 @@ want 0 "accept again" env STANDIN_ANSWER=accept "$R"
 want 1 "reviewer fails" env STANDIN_ANSWER=fail "$R"
 [ ! -e "$v" ] && ok || bad "a failed run left the earlier verdict"
 want 1 "two verdict lines" env STANDIN_ANSWER=two "$R"
+want 1 "ACCEPT plus an unknown verdict line" env STANDIN_ANSWER=odd "$R"
+mkdir -p sub && touch sub/.keep && git add sub && git commit -qm "chore: add a folder"
+head="$(git rev-parse HEAD)"; v=".ai/reviews/${head:0:12}.md"
+(cd sub && want 0 "run from a subfolder" env STANDIN_ANSWER=accept "$R")
+[ -f "$v" ] && [ ! -e sub/.ai ] && ok || bad "a run from a subfolder did not write to the repository root"
+cp .git/index "$tmp/index"; echo broken > .git/index
+want 1 "review with a broken index" "$R"; want 1 "gate with a broken index" env GATE_CMD=true "$ROOT/bin/gate.sh"
+want 1 "merge-check with a broken index" "$ROOT/bin/merge-check.sh"; cp "$tmp/index" .git/index
+if [ "$(id -u)" != 0 ]; then
+  echo x > "$tmp/locked.md"; chmod 000 "$tmp/locked.md"
+  want 1 "unreadable prompt" env REVIEW_PROMPT="$tmp/locked.md" "$R"
+fi
 want 1 "files changed during review" env STANDIN_TOUCH="$repo/new.txt" "$R"; rm -f "$repo/new.txt"
 want 1 "same engine twice" env BUILDER=claude REVIEWER=claude "$R"
 want 1 "unknown builder" env BUILDER=other "$R"
@@ -67,6 +85,8 @@ G="$ROOT/bin/gate.sh"; rec=".ai/tests/$head.pass"
 want 1 "no GATE_CMD" "$G"
 want 0 "passing command" env GATE_CMD="true" "$G"; [ -f "$rec" ] && ok || bad "no pass record after a pass"
 want 3 "failing command" env GATE_CMD="exit 3" "$G"; [ ! -e "$rec" ] && ok || bad "the pass record survived a failure"
+env GATE_CMD=true "$G" >/dev/null 2>&1; want 1 "rerun without GATE_CMD" "$G"
+[ ! -e "$rec" ] && ok || bad "a rerun without GATE_CMD kept the old pass record"
 want 1 "command leaves an untracked file" env GATE_CMD="touch stray.txt" "$G"; rm -f stray.txt
 [ ! -e "$rec" ] && ok || bad "a run with an untracked file wrote a pass record"
 
@@ -82,27 +102,39 @@ want 1 "verdict copied from an older commit" "$M"
 
 echo "== install and uninstall on a scratch HOME"
 snap() { (cd "$1" && find . -printf '%y %m %p\n' | sort && find . -type f | sort | while read -r f; do echo "$f $(git hash-object "$f")"; done); }
-for setup in empty with-bin; do
+for setup in empty with-bin with-share; do
   h="$tmp/home-$setup"; mkdir -p "$h"
   [ "$setup" = with-bin ] && mkdir -p "$h/.local/bin" && echo keep > "$h/.local/bin/other-tool"
+  [ "$setup" = with-share ] && mkdir -p "$h/.local/share/two-engines-gate/bin" && echo x > "$h/.local/share/two-engines-gate/bin/other.sh"
   snap "$h" > "$tmp/before"
-  want 0 "install ($setup)" env HOME="$h" bash "$ROOT/install.sh"
+  want 0 "install ($setup)" env HOME="$h" PREFIX="$h/.local" bash "$ROOT/install.sh"
   want 0 "installed command runs ($setup)" "$h/.local/bin/two-engines-merge-check" --help
   [ -x "$h/.local/share/two-engines-gate/bin/review.sh" ] && ok || bad "review.sh not installed ($setup)"
-  want 1 "second install refused ($setup)" env HOME="$h" bash "$ROOT/install.sh"
-  want 0 "uninstall ($setup)" env HOME="$h" bash "$ROOT/uninstall.sh"
+  want 1 "second install refused ($setup)" env HOME="$h" PREFIX="$h/.local" bash "$ROOT/install.sh"
+  want 0 "uninstall ($setup)" env HOME="$h" PREFIX="$h/.local" bash "$ROOT/uninstall.sh"
   snap "$h" > "$tmp/after"
   cmp -s "$tmp/before" "$tmp/after" && ok || { bad "HOME differs after uninstall ($setup)"; diff "$tmp/before" "$tmp/after"; }
 done
 h="$tmp/home-conflict"; mkdir -p "$h/.local/bin" && echo mine > "$h/.local/bin/two-engines-gate"
 snap "$h" > "$tmp/before"
-want 1 "install refuses an existing file" env HOME="$h" bash "$ROOT/install.sh"
+want 1 "install refuses an existing file" env HOME="$h" PREFIX="$h/.local" bash "$ROOT/install.sh"
 snap "$h" > "$tmp/after"; cmp -s "$tmp/before" "$tmp/after" && ok || bad "a refused install changed HOME"
 h="$tmp/home-edited"; mkdir -p "$h"
-env HOME="$h" bash "$ROOT/install.sh" >/dev/null 2>&1; echo "# edited" >> "$h/.local/share/two-engines-gate/review-prompt.md"
-want 1 "uninstall keeps an edited file" env HOME="$h" bash "$ROOT/uninstall.sh"
+env HOME="$h" PREFIX="$h/.local" bash "$ROOT/install.sh" >/dev/null 2>&1; echo "# edited" >> "$h/.local/share/two-engines-gate/review-prompt.md"
+want 1 "uninstall keeps an edited file" env HOME="$h" PREFIX="$h/.local" bash "$ROOT/uninstall.sh"
 [ -f "$h/.local/share/two-engines-gate/review-prompt.md" ] && ok || bad "uninstall removed an edited file"
-
+h="$tmp/home-odd"; mkdir -p "$h/odd \$(x)"
+(cd "$h" && want 0 "install with a relative PREFIX holding odd characters" env HOME="$h" PREFIX='odd $(x)/p' bash "$ROOT/install.sh")
+(cd / && want 0 "wrapper runs from another folder" "$h/odd \$(x)/p/bin/two-engines-gate" --help)
+(cd "$h" && want 0 "uninstall with the same relative PREFIX" env HOME="$h" PREFIX='odd $(x)/p' bash "$ROOT/uninstall.sh")
+[ ! -e "$h/odd \$(x)/p" ] && ok || bad "uninstall left the relative PREFIX behind"
+if [ "$(id -u)" != 0 ]; then
+  h="$tmp/home-locked"; mkdir -p "$h/.local/bin"
+  env HOME="$h" PREFIX="$h/.local" bash "$ROOT/install.sh" >/dev/null 2>&1; chmod 555 "$h/.local/bin"
+  want 1 "uninstall reports files it cannot remove" env HOME="$h" PREFIX="$h/.local" bash "$ROOT/uninstall.sh"
+  [ -f "$h/.local/share/two-engines-gate/install-manifest" ] && ok || bad "uninstall dropped the manifest after a failed removal"
+  chmod 755 "$h/.local/bin"
+fi
 echo
 echo "passed $pass, failed $fail"
 [ "$fail" = 0 ]

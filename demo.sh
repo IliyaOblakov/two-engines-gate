@@ -25,11 +25,12 @@ else
   ln -s "$HERE/examples/stand-in-reviewer.sh" "$tmp/stand-in/codex"
   export PATH="$tmp/stand-in:$PATH"
 fi
-fails=0
+fails=0 last=1
 step() { printf '\n== %s\n' "$1"; }
 expect() { # expected exit, then the command
   local want="$1"; shift
   "$@"; local got=$?
+  last=$got
   if [ "$got" = "$want" ]; then echo "(exit $got, as expected)"
   elif [ "${DEMO_REAL:-0}" = 1 ]; then echo "(exit $got)"
   else echo "UNEXPECTED: exit $got, expected $want"; fails=$((fails + 1)); fi
@@ -60,7 +61,7 @@ export STANDIN_ANSWER=changes STANDIN_FINDING="blocker, sum.sh:3: the loop start
 expect 2 "$HERE/bin/review.sh"
 expect 1 "$HERE/bin/merge-check.sh"
 step "4. The builder fixes it in a new commit. The old evidence does not carry over"
-sed -i 's/"\${@:2}"/"$@"/' sum.sh
+printf '#!/usr/bin/env bash\ntotal=0\nfor n in "$@"; do total=$((total + n)); done\necho "$total"\n' > sum.sh
 printf '[ "$(bash sum.sh 3 4)" = 7 ] || { echo "sum 3 4 failed"; exit 1; }\n' | cat - test.sh > test.new && mv test.new test.sh
 git commit -qam "fix: sum.sh adds every argument" || exit 1
 expect 1 "$HERE/bin/merge-check.sh"
@@ -69,8 +70,12 @@ expect 0 "$HERE/bin/gate.sh"
 export STANDIN_ANSWER=accept
 expect 0 "$HERE/bin/review.sh"
 expect 0 "$HERE/bin/merge-check.sh"
-step "6. Merge with git"
-git switch -q main && git merge -q --ff-only feature && git log --oneline -n 3
+step "6. Merge with git once the merge check passes"
+if [ "$last" = 0 ]; then
+  git switch -q main && git merge -q --ff-only feature && git log --oneline -n 3
+else
+  echo "no merge: the merge check refused"
+fi
 echo
 ls .ai/reviews/*.md .ai/tests/*.pass
 if [ "$fails" -gt 0 ]; then echo "demo: $fails unexpected results" >&2; exit 1; fi

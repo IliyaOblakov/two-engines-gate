@@ -8,41 +8,57 @@
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PREFIX="${PREFIX:-$HOME/.local}"
+case "$PREFIX" in /*) ;; *) PREFIX="$PWD/$PREFIX" ;; esac
 share="$PREFIX/share/two-engines-gate" manifest="$PREFIX/share/two-engines-gate/install-manifest"
 die() { echo "install: $*" >&2; exit 1; }
 command -v git >/dev/null || die "git is required"
-sources=(bin/review.sh bin/gate.sh bin/merge-check.sh review-prompt.md)
-declare -A cmd=([review]=review.sh [gate]=gate.sh [merge-check]=merge-check.sh)
-targets=("$manifest")
-for s in "${sources[@]}"; do [ -f "$HERE/$s" ] || die "missing $s; run from a full clone"; targets+=("$share/$s"); done
-for c in "${!cmd[@]}"; do targets+=("$PREFIX/bin/two-engines-$c"); done
+scripts=(review.sh gate.sh merge-check.sh)
+names=(two-engines-review two-engines-gate two-engines-merge-check)
+targets=("$manifest" "$share/review-prompt.md")
+[ -f "$HERE/review-prompt.md" ] || die "missing review-prompt.md; run from a full clone"
+for i in 0 1 2; do
+  [ -f "$HERE/bin/${scripts[i]}" ] || die "missing bin/${scripts[i]}; run from a full clone"
+  targets+=("$share/bin/${scripts[i]}" "$PREFIX/bin/${names[i]}")
+done
 for t in "${targets[@]}"; do
   [ ! -e "$t" ] && [ ! -L "$t" ] || die "$t already exists; nothing was changed (run uninstall.sh first, or set PREFIX)"
 done
-created=()
-make_dir() { # creates a folder and its missing parents, remembering each one, outermost first
-  local d="$1" missing=()
-  while [ ! -d "$d" ]; do missing=("$d" ${missing[@]+"${missing[@]}"}); d="$(dirname "$d")"; done
-  for d in ${missing[@]+"${missing[@]}"}; do mkdir "$d" || return 1; created+=("$d"); done
+new_dirs=() writing=""
+undo() {
+  [ -n "$writing" ] && rm -f "$writing"
+  [ -f "$manifest" ] && PREFIX="$PREFIX" bash "$HERE/uninstall.sh" >/dev/null 2>&1
+  for (( i=${#new_dirs[@]}-1; i>=0; i-- )); do rmdir "${new_dirs[i]}" 2>/dev/null; done
+  die "$1; the partial install was undone"
 }
-undo() { [ -f "$manifest" ] && PREFIX="$PREFIX" bash "$HERE/uninstall.sh" >/dev/null 2>&1
-  for (( i=${#created[@]}-1; i>=0; i-- )); do rmdir "${created[i]}" 2>/dev/null; done; die "$1; the partial install was undone"; }
-make_dir "$share/bin" && make_dir "$PREFIX/bin" || undo "cannot create folders under $PREFIX"
-: > "$manifest" || undo "cannot write $manifest"
-for d in ${created[@]+"${created[@]}"}; do printf 'dir\t%s\n' "$d" >> "$manifest" || undo "cannot write $manifest"; done
-add() { # records a created file with its git blob hash
-  printf 'file\t%s\t%s\n' "$1" "$(git hash-object "$1")" >> "$manifest" || undo "cannot write $manifest"
+ensure_dir() { # walks the absolute path from the root down and creates each missing part
+  local part path=""
+  IFS=/ read -ra parts <<< "${1#/}"
+  for part in "${parts[@]}"; do
+    path="$path/$part"
+    [ -d "$path" ] && continue
+    mkdir "$path" || return 1
+    new_dirs+=("$path")
+  done
 }
-for s in "${sources[@]}"; do
-  cp "$HERE/$s" "$share/$s" || undo "cannot copy $s"
-  add "$share/$s"
+ensure_dir "$share/bin" && ensure_dir "$PREFIX/bin" || undo "cannot create folders under $PREFIX"
+writing="$manifest"
+for d in ${new_dirs[@]+"${new_dirs[@]}"}; do echo "D $d"; done > "$manifest" || undo "cannot write $manifest"
+writing=""
+place() { # place <target> <command producing the content>: writes a new file and records it
+  local target="$1"; shift
+  writing="$target"
+  "$@" > "$target" || undo "cannot write $target"
+  echo "F $(git hash-object "$target") $target" >> "$manifest" || undo "cannot write $manifest"
+  writing=""
+}
+wrapper() { printf '#!/usr/bin/env bash\nexec %q "$@"\n' "$1"; }
+place "$share/review-prompt.md" cat "$HERE/review-prompt.md"
+for i in 0 1 2; do
+  place "$share/bin/${scripts[i]}" cat "$HERE/bin/${scripts[i]}"
+  chmod +x "$share/bin/${scripts[i]}" || undo "cannot make ${scripts[i]} executable"
+  place "$PREFIX/bin/${names[i]}" wrapper "$share/bin/${scripts[i]}"
+  chmod +x "$PREFIX/bin/${names[i]}" || undo "cannot make ${names[i]} executable"
 done
-chmod +x "$share"/bin/*.sh || undo "cannot make the scripts executable"
-for c in "${!cmd[@]}"; do
-  w="$PREFIX/bin/two-engines-$c"
-  printf '#!/usr/bin/env bash\nexec "%s" "$@"\n' "$share/bin/${cmd[$c]}" > "$w" && chmod +x "$w" || undo "cannot write $w"
-  add "$w"
-done
-echo "installed: two-engines-review, two-engines-gate and two-engines-merge-check in $PREFIX/bin"
+echo "installed: ${names[*]} in $PREFIX/bin"
 case ":$PATH:" in *":$PREFIX/bin:"*) ;; *) echo "note: $PREFIX/bin is not on PATH; add it, or call the scripts by their full path" ;; esac
 echo "undo with: bash uninstall.sh"
