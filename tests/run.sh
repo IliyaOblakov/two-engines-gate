@@ -95,7 +95,7 @@ want 1 "command leaves an untracked file" env GATE_CMD="touch stray.txt" "$G"; r
 echo "== gate.sh: a run of zero tests is not a pass"
 zt() { # zt <exit> <label> <output, printf %b> [VAR=value...]: gate.sh on a command that prints <output>
   local code="$1" label="$2"; printf '%b' "$3" > "$tmp/zt.txt"; shift 3
-  want "$code" "$label" env GATE_CMD="cat '$tmp/zt.txt'" "$@" "$G"
+  want "$code" "$label" env GATE_CMD="cat '$tmp/zt.txt'" ${1+"$@"} "$G"
   if [ "$code" = 0 ]; then [ -f "$rec" ] && ok || bad "$label: no pass record"
   else [ ! -e "$rec" ] && ok || bad "$label: a pass record was written"; fi
 }

@@ -2,7 +2,11 @@
 
 A local review and merge gate for Claude Code and Codex. One engine writes the code; the other reviews the commit read-only and its verdict is saved under the exact commit it reviewed. The project's tests run on that same commit. `merge-check.sh` refuses unless HEAD has both a test pass and an ACCEPT.
 
-Requirements: bash 4 or newer and git. Real reviews also need the Claude Code and Codex CLIs, installed and logged in. The demo and the tests need neither CLI, no account and no network. Tested on Linux (Ubuntu 24.04 under WSL2); `tests/run.sh` also needs GNU find and grep.
+Early: first public version 21 Oct 2026.
+
+Requirements: bash 4 or newer and git. Real reviews also need the Claude Code and Codex CLIs, installed and logged in. The demo and the tests need neither CLI, no account and no network. `tests/run.sh` also needs GNU find and grep.
+
+Platforms: tested on Linux, on Ubuntu 24.04 under WSL2 and on Debian 13, with bash 5.2. The tests and the demo also pass with bash 4.0, 4.2, 4.3 and 4.4 built from source on Linux. macOS is not tested: it ships bash 3.2, older than the bash 4 this project supports, so it needs a newer bash, for example from Homebrew.
 
 Built on information gathered since the first Codex and Claude CLIs.
 
@@ -16,6 +20,78 @@ BUILDER=codex bash demo.sh
 ```
 
 The demo builds a throwaway repository in a temporary folder and walks through one change: a commit with a bug the tests miss, the merge check refusing, a CHANGES REQUIRED review, a fix commit whose old evidence no longer counts, then tests and an ACCEPT on the new commit and the merge. A stand-in answers as the reviewer, so no model is called. `DEMO_REAL=1 bash demo.sh` calls the real reviewer CLI instead. The folder is removed at the end (`KEEP=1` keeps it).
+
+<details>
+<summary>Output of one run of <code>bash demo.sh</code> (commit hashes and dates may differ between runs)</summary>
+
+```
+Reviewer is the other engine: BUILDER=claude. Repository: a throwaway copy in a temp folder.
+
+== 1. The claude builder committed sum.sh. Merge check before anything else
+merge-check: REFUSED: no test pass record for c8e3ca33697c; run gate.sh
+(exit 1, as expected)
+
+== 2. Tests pass on this commit (they miss the bug)
+gate: running 'bash test.sh' on c8e3ca33697c
+gate: PASS on c8e3ca33697c, record .ai/tests/c8e3ca33697c18c989363e2668c5160991999ef1.pass
+(exit 0, as expected)
+merge-check: REFUSED: no review verdict for c8e3ca33697c; run review.sh
+(exit 1, as expected)
+
+== 3. Read-only review by the other engine
+Head: c8e3ca33697c18c989363e2668c5160991999ef1
+Base: 3da6d9ffdd88068b253a28637099ea910044403f (main)
+Builder: claude
+Reviewer: codex
+Date: 2026-10-21 17:29 EEST
+
+Review by a stand-in for codex. No model was called; this answer is canned.
+
+Verdict: CHANGES REQUIRED
+
+- blocker, sum.sh:3: the loop starts at the second argument, so 'bash sum.sh 3 4' prints 4, not 7. test.sh only checks 'sum 0 4', where the bug cannot show.
+verdict file: .ai/reviews/c8e3ca33697c.md
+(exit 2, as expected)
+merge-check: REFUSED: the verdict for c8e3ca33697c is not a single ACCEPT
+(exit 1, as expected)
+
+== 4. The builder fixes it in a new commit. The old evidence does not carry over
+merge-check: REFUSED: no test pass record for db1d095eb939; run gate.sh
+(exit 1, as expected)
+
+== 5. Tests and a new review on the new commit
+gate: running 'bash test.sh' on db1d095eb939
+gate: PASS on db1d095eb939, record .ai/tests/db1d095eb939688006353bb7227b28bb1f38f146.pass
+(exit 0, as expected)
+Head: db1d095eb939688006353bb7227b28bb1f38f146
+Base: 3da6d9ffdd88068b253a28637099ea910044403f (main)
+Builder: claude
+Reviewer: codex
+Date: 2026-10-21 17:29 EEST
+
+Review by a stand-in for codex. No model was called; this answer is canned.
+
+Verdict: ACCEPT
+
+No findings.
+verdict file: .ai/reviews/db1d095eb939.md
+(exit 0, as expected)
+merge-check: OK: db1d095eb939 has a test pass and an ACCEPT from codex (builder claude)
+(exit 0, as expected)
+
+== 6. Merge with git once the merge check passes
+db1d095 fix: sum.sh adds every argument
+c8e3ca3 feat: add sum.sh
+3da6d9f chore: start the demo project
+
+.ai/reviews/c8e3ca33697c.md
+.ai/reviews/db1d095eb939.md
+.ai/tests/c8e3ca33697c18c989363e2668c5160991999ef1.pass
+.ai/tests/db1d095eb939688006353bb7227b28bb1f38f146.pass
+demo: done
+```
+
+</details>
 
 ## How it works
 
