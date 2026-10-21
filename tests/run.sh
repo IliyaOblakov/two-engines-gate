@@ -112,7 +112,8 @@ zt 1 "node --test, every test skipped" "# tests 1\n# pass 0\n# skipped 1\n"
 zt 1 "Jest, every test skipped" "Tests:       2 skipped, 2 total\n"
 zt 1 "Vitest, every test skipped" "      Tests  2 skipped (2)\n"
 zt 1 "coloured mocha, no tests" "\e[92m \e[0m\e[32m 0 passing\e[0m\e[90m (2ms)\e[0m\n"
-zt 1 "one command ran tests, another ran none" "  1 passing (2ms)\n  0 passing (1ms)\n"
+zt 0 "one command ran tests, another ran none" "  1 passing (2ms)\n  0 passing (1ms)\n"
+zt 1 "every command ran none" "  0 passing (1ms)\nno tests ran in 0.01s\nTests:       1 skipped, 1 total\n"
 zt 0 "summaries with tests that ran" "  10 passing (5ms)\nRan 10 tests in 0.01s\n1 passed, 1 deselected in 0.01s\n# tests 2\n# pass 1\nTests:       1 skipped, 1 passed, 2 total\n      Tests  1 passed | 1 skipped (2)\n\e[32m  3 passing\e[0m\n"
 zt 0 "zero-test check off" "" GATE_MIN_TESTS=0
 count='^test result: ok\. ([0-9]+) passed'
