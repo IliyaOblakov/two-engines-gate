@@ -9,6 +9,7 @@ set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PREFIX="${PREFIX:-$HOME/.local}"
 case "$PREFIX" in /*) ;; *) PREFIX="$PWD/$PREFIX" ;; esac
+case "$PREFIX" in *$'\n'*) echo "install: PREFIX must not contain a line break" >&2; exit 1 ;; esac
 share="$PREFIX/share/two-engines-gate" manifest="$PREFIX/share/two-engines-gate/install-manifest"
 die() { echo "install: $*" >&2; exit 1; }
 command -v git >/dev/null || die "git is required"

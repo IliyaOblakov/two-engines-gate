@@ -18,6 +18,7 @@ want() { # want <exit> <label> <command...>
   "$@" > "$tmp/out" 2>&1; local got=$?
   if [ "$got" = "$code" ]; then ok; else bad "$label: exit $got, expected $code"; sed 's/^/  | /' "$tmp/out"; fi
 }
+in_dir() { local d="$1"; shift; (cd "$d" && "$@"); }
 has() { grep -q -- "$2" "$1" && ok || bad "$3"; }
 
 echo "== syntax"
@@ -28,7 +29,8 @@ files() { # tracked files in a clone, otherwise every file outside .git and .ai
   (cd "$ROOT" && { git ls-files -z 2>/dev/null || find . -type f -not -path './.git/*' -not -path './.ai/*' -print0; })
 }
 scan() { # scan <label> <grep args...>: a match or a grep error is a failure
-  local list rc; mapfile -d '' list < <(files)
+  local list=() f rc
+  while IFS= read -r -d '' f; do list+=("$f"); done < <(files)
   (cd "$ROOT" && grep -n "${@:2}" -- "${list[@]}"); rc=$?
   case "$rc" in 1) ok ;; 0) bad "$1" ;; *) bad "$1: grep failed ($rc)" ;; esac
 }
@@ -64,7 +66,7 @@ want 1 "two verdict lines" env STANDIN_ANSWER=two "$R"
 want 1 "ACCEPT plus an unknown verdict line" env STANDIN_ANSWER=odd "$R"
 mkdir -p sub && touch sub/.keep && git add sub && git commit -qm "chore: add a folder"
 head="$(git rev-parse HEAD)"; v=".ai/reviews/${head:0:12}.md"
-(cd sub && want 0 "run from a subfolder" env STANDIN_ANSWER=accept "$R")
+want 0 "run from a subfolder" in_dir sub env STANDIN_ANSWER=accept "$R"
 [ -f "$v" ] && [ ! -e sub/.ai ] && ok || bad "a run from a subfolder did not write to the repository root"
 cp .git/index "$tmp/index"; echo broken > .git/index
 want 1 "review with a broken index" "$R"; want 1 "gate with a broken index" env GATE_CMD=true "$ROOT/bin/gate.sh"
@@ -124,10 +126,21 @@ env HOME="$h" PREFIX="$h/.local" bash "$ROOT/install.sh" >/dev/null 2>&1; echo "
 want 1 "uninstall keeps an edited file" env HOME="$h" PREFIX="$h/.local" bash "$ROOT/uninstall.sh"
 [ -f "$h/.local/share/two-engines-gate/review-prompt.md" ] && ok || bad "uninstall removed an edited file"
 h="$tmp/home-odd"; mkdir -p "$h/odd \$(x)"
-(cd "$h" && want 0 "install with a relative PREFIX holding odd characters" env HOME="$h" PREFIX='odd $(x)/p' bash "$ROOT/install.sh")
-(cd / && want 0 "wrapper runs from another folder" "$h/odd \$(x)/p/bin/two-engines-gate" --help)
-(cd "$h" && want 0 "uninstall with the same relative PREFIX" env HOME="$h" PREFIX='odd $(x)/p' bash "$ROOT/uninstall.sh")
+want 0 "install with a relative PREFIX holding odd characters" in_dir "$h" env HOME="$h" PREFIX='odd $(x)/p' bash "$ROOT/install.sh"
+want 0 "wrapper runs from another folder" in_dir / "$h/odd \$(x)/p/bin/two-engines-gate" --help
+want 0 "uninstall with the same relative PREFIX" in_dir "$h" env HOME="$h" PREFIX='odd $(x)/p' bash "$ROOT/uninstall.sh"
 [ ! -e "$h/odd \$(x)/p" ] && ok || bad "uninstall left the relative PREFIX behind"
+h="$tmp/home-space"; mkdir -p "$h/p"; snap "$h" > "$tmp/before"
+want 0 "install into a PREFIX ending in a space" env HOME="$h" PREFIX="$h/p " bash "$ROOT/install.sh"
+want 0 "uninstall from a PREFIX ending in a space" env HOME="$h" PREFIX="$h/p " bash "$ROOT/uninstall.sh"
+snap "$h" > "$tmp/after"; cmp -s "$tmp/before" "$tmp/after" && ok || bad "a PREFIX ending in a space was not restored"
+h="$tmp/home-extra"; mkdir -p "$h"
+env HOME="$h" PREFIX="$h/.local" bash "$ROOT/install.sh" >/dev/null 2>&1; echo mine > "$h/.local/bin/other"
+want 1 "uninstall keeps a folder with a foreign file" env HOME="$h" PREFIX="$h/.local" bash "$ROOT/uninstall.sh"
+[ -f "$h/.local/share/two-engines-gate/install-manifest" ] && ok || bad "the manifest was lost while a folder was kept"
+rm "$h/.local/bin/other"
+want 0 "a second uninstall finishes the job" env HOME="$h" PREFIX="$h/.local" bash "$ROOT/uninstall.sh"
+[ -z "$(ls -A "$h")" ] && ok || bad "the second uninstall left files behind"
 if [ "$(id -u)" != 0 ]; then
   h="$tmp/home-locked"; mkdir -p "$h/.local/bin"
   env HOME="$h" PREFIX="$h/.local" bash "$ROOT/install.sh" >/dev/null 2>&1; chmod 555 "$h/.local/bin"
