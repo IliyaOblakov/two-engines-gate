@@ -22,7 +22,7 @@ The demo builds a throwaway repository in a temporary folder and walks through o
 | Script | What it does | Writes |
 |---|---|---|
 | `bin/review.sh` | Sends the commits and the diff to the engine that did not write them, read-only. Takes the verdict from its final message only. | `.ai/reviews/<sha12>.md` |
-| `bin/gate.sh` | Runs `GATE_CMD` on a clean checkout. Records a pass only when the command passed, left the checkout unchanged and reported at least one test. | `.ai/tests/<sha>.pass` |
+| `bin/gate.sh` | Runs `GATE_CMD` on a clean checkout. Records a pass only when the command passed, left the checkout unchanged and did not report a run of zero tests (see below). | `.ai/tests/<sha>.pass` |
 | `bin/merge-check.sh` | Refuses unless the checkout is clean and HEAD has a pass record and an ACCEPT from a reviewer that is not the builder. Never merges. | nothing |
 
 Why the verdict is named after the commit: an ACCEPT for an older commit can quietly cover code nobody reviewed. A new commit needs a new review and a new test run. review.sh and gate.sh remove their earlier evidence for the commit before anything else, so a failed or refused run never leaves an old pass or ACCEPT behind.
@@ -55,7 +55,9 @@ two-engines-merge-check && git switch main && git merge --ff-only <branch>
 
 ### A run of zero tests is not a pass
 
-A test command can exit 0 without running a single test, for example when a file list or a filter selects nothing. gate.sh then refuses the pass (exit 1). With `GATE_COUNT_RE` unset it fails a run whose output is empty or whose summary shows that no test ran: no tests found (pytest, unittest, `node --test`, mocha, Jest, Vitest) or every test filtered out or skipped (pytest, `node --test`, mocha, Jest, Vitest). For other runners, set `GATE_COUNT_RE` to a bash regex for the lines that report tests: group 1 is the count on that line, a match with an empty or no group 1 counts as one, and the counts are added up. `GATE_MIN_TESTS` is the fewest tests the run must report (default 1); `GATE_MIN_TESTS=0` turns the check off.
+A test command can exit 0 without running a single test, for example when a file list or a filter selects nothing. gate.sh then refuses the pass (exit 1). With `GATE_COUNT_RE` unset it fails a run whose output is empty or has a summary line showing that no test ran: no tests found (pytest, unittest, `node --test`, mocha, Jest, Vitest) or every test filtered out or skipped (pytest, `node --test`, mocha, Jest, Vitest). One such line fails the run even when another command in `GATE_CMD` ran tests. Other output passes, so this mode only catches the summaries it knows. Terminal colour codes and carriage returns are ignored.
+
+For a real count, set `GATE_COUNT_RE` to a bash regex for the lines that report tests: group 1 is the count on that line, a match with an empty or no group 1 counts as one, and the counts are added up. `GATE_MIN_TESTS` is the fewest tests the run must report (default 1; a value above 1 needs `GATE_COUNT_RE`). `GATE_MIN_TESTS=0` turns the check off.
 
 ```
 GATE_CMD="cargo test" GATE_COUNT_RE='^test result: ok\. ([0-9]+) passed' two-engines-gate

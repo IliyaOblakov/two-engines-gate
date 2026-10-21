@@ -3,16 +3,17 @@
 # Runs the test command on a clean checkout and writes the pass record .ai/tests/<HEAD>.pass only
 # after a clean pass on that exact commit. The record is removed before the run and stays removed
 # when the command fails, when HEAD moves, when the run leaves changed or untracked files, and
-# when the run reports fewer tests than GATE_MIN_TESTS (so a run of zero tests is not a pass).
+# when the run shows that no test ran (so a run of zero tests is not a pass).
 # Env: GATE_CMD        the command to run, through bash -c, from the repository root (required)
-#      GATE_MIN_TESTS  the fewest tests the run must report (default 1); 0 turns the count off
 #      GATE_COUNT_RE   a bash regex for the lines that report tests; group 1 is the count on
 #                      that line (an empty or missing group 1 counts as one) and the counts
-#                      are added up. Unset: the run fails when its output is empty or shows a
-#                      known zero-test summary.
+#                      are added up. Unset: the run fails when its output is empty or has a
+#                      known zero-test summary line, and other output passes.
+#      GATE_MIN_TESTS  the fewest tests the count must reach (default 1; above 1 needs
+#                      GATE_COUNT_RE); 0 turns every test count check off
 # Exit: the test command's status; 1 for a refused run, too few tests or an unrecorded pass.
 set -uo pipefail
-case "${1:-}" in -h|--help) sed -n '2,13p' "$0"; exit 0 ;; esac
+case "${1:-}" in -h|--help) sed -n '2,14p' "$0"; exit 0 ;; esac
 die() { echo "gate: $*" >&2; exit 1; }
 cd "${1:-.}" || exit 1
 root="$(git rev-parse --show-toplevel 2>/dev/null)" || die "not a git repository"
@@ -27,8 +28,10 @@ rm -f "$record"; [ ! -e "$record" ] || die "cannot remove the earlier pass recor
 [ -n "${GATE_CMD:-}" ] || die "set GATE_CMD to the test command, for example GATE_CMD='npm test'"
 min="${GATE_MIN_TESTS:-1}" count_re="${GATE_COUNT_RE:-}"
 [[ "$min" =~ ^[0-9]{1,9}$ ]] || die "GATE_MIN_TESTS must be a whole number, got '$min'"
-if [ -n "$count_re" ]; then [[ "" =~ $count_re ]]; [ $? -ne 2 ] || die "GATE_COUNT_RE is not a valid regex"; fi
+if [ -n "$count_re" ]; then [[ "" =~ $count_re ]]; [ $? -ne 2 ] || die "GATE_COUNT_RE is not a valid regex"
+elif [ "$min" -gt 1 ]; then die "GATE_MIN_TESTS above 1 needs GATE_COUNT_RE to count the tests"; fi
 # Summary lines of runs where no test ran (none found, or every test filtered out or skipped).
+# One such line fails the run, also when another command in GATE_CMD did run tests.
 # go test and cargo test print a zero line for each package or target that has no tests, even
 # when others ran, so they need GATE_COUNT_RE (see the README).
 zero=(
@@ -40,22 +43,22 @@ zero=(
   '^ *No test files found, exiting' '^ *Tests +(no tests|[0-9]+ (skipped|todo)( \| [0-9]+ (skipped|todo))* \()' # Vitest
 )
 zero_re="$(IFS='|'; echo "${zero[*]}")"
-too_few() { # prints why the run reported fewer than $min tests; silent when it reported enough
-  local line c n=0
+too_few() { # prints why the run reported too few tests; silent when it reported enough
+  local text line c n=0
   [ "$min" -gt 0 ] || return 0
-  if [ -z "$count_re" ]; then
-    [ -s "$log" ] || { echo "the test command printed nothing, so no test count"; return 0; }
-    grep -Eq -- "$zero_re" < <(tr -d '\r' < "$log")
-    case $? in 0) echo "the output shows a run of zero tests" ;; 1) ;; *) echo "cannot read the log $log" ;; esac
-    return 0
-  fi
-  while IFS= read -r line || [ -n "$line" ]; do
-    [[ "${line%$'\r'}" =~ $count_re ]] || continue
-    c="${BASH_REMATCH[1]:-1}"
-    [[ "$c" =~ ^[0-9]{1,9}$ ]] || { echo "GATE_COUNT_RE group 1 matched '$c', not a number"; return 0; }
-    n=$((n + 10#$c))
-  done < "$log" || { echo "cannot read the log $log"; return 0; }
-  [ "$n" -ge "$min" ] || echo "the output reports $n tests, fewer than GATE_MIN_TESTS=$min"
+  [ -s "$log" ] || { echo "the test command printed nothing, so no test count"; return 0; }
+  # Drop carriage returns and terminal colour and cursor codes so the patterns see plain lines.
+  text="$(sed -e $'s/\r$//' -e $'s/\e\\[[0-9;?]*[A-Za-z]//g' "$log")" || { echo "cannot read the log $log"; return 0; }
+  while IFS= read -r line; do
+    if [ -z "$count_re" ]; then
+      if [[ "$line" =~ $zero_re ]]; then echo "the output shows a run of zero tests: $line"; return 0; fi
+    elif [[ "$line" =~ $count_re ]]; then
+      c="${BASH_REMATCH[1]:-1}"
+      [[ "$c" =~ ^[0-9]{1,9}$ ]] || { echo "GATE_COUNT_RE group 1 matched '$c', not a number"; return 0; }
+      n=$((n + 10#$c))
+    fi
+  done <<< "$text" || { echo "cannot read the log $log"; return 0; }
+  [ -z "$count_re" ] || [ "$n" -ge "$min" ] || echo "the output reports $n tests, fewer than GATE_MIN_TESTS=$min"
 }
 clean || die "REFUSED: uncommitted changes or untracked files (or git status failed); commit or remove them first"
 echo "gate: running '$GATE_CMD' on ${head:0:12}"
