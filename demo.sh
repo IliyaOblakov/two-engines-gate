@@ -8,7 +8,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUILDER="${BUILDER:-claude}"
 case "$BUILDER" in claude|codex) ;; *) echo "BUILDER must be claude or codex" >&2; exit 1 ;; esac
 while IFS= read -r v; do unset "$v"; done < <(compgen -e | grep -E '^(GIT_|STANDIN_|REVIEW)' || true)
-unset GATE_CMD
+unset GATE_CMD GATE_MIN_TESTS GATE_COUNT_RE
 tmp="$(mktemp -d)" || exit 1
 cleanup() { if [ "${KEEP:-0}" = 1 ]; then echo "kept: $tmp"; else rm -rf "$tmp"; fi; }
 trap cleanup EXIT

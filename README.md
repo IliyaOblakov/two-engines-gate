@@ -22,7 +22,7 @@ The demo builds a throwaway repository in a temporary folder and walks through o
 | Script | What it does | Writes |
 |---|---|---|
 | `bin/review.sh` | Sends the commits and the diff to the engine that did not write them, read-only. Takes the verdict from its final message only. | `.ai/reviews/<sha12>.md` |
-| `bin/gate.sh` | Runs `GATE_CMD` on a clean checkout. Records a pass only when the command passed and left the checkout unchanged. | `.ai/tests/<sha>.pass` |
+| `bin/gate.sh` | Runs `GATE_CMD` on a clean checkout. Records a pass only when the command passed, left the checkout unchanged and did not report a run of zero tests (see below). | `.ai/tests/<sha>.pass` |
 | `bin/merge-check.sh` | Refuses unless the checkout is clean and HEAD has a pass record and an ACCEPT from a reviewer that is not the builder. Never merges. | nothing |
 
 Why the verdict is named after the commit: an ACCEPT for an older commit can quietly cover code nobody reviewed. A new commit needs a new review and a new test run. review.sh and gate.sh remove their earlier evidence for the commit before anything else, so a failed or refused run never leaves an old pass or ACCEPT behind.
@@ -53,6 +53,19 @@ two-engines-merge-check && git switch main && git merge --ff-only <branch>
 
 `BUILDER=codex` flips the roles: Codex writes and Claude Code reviews. `REVIEW_BASE` sets the start of the reviewed range (default `origin/main`, else `main`). `REVIEW_MODEL` picks the reviewer's model. `docs/engines.md` has the exact reviewer calls, what each one can and cannot do, and the Codex config notes.
 
+### A run of zero tests is not a pass
+
+A test command can exit 0 without running a single test, for example when a file list or a filter selects nothing. gate.sh then refuses the pass (exit 1). With `GATE_COUNT_RE` unset it reads the summary lines of pytest, unittest, `node --test`, mocha, Jest and Vitest, adds up the tests that ran in all of them, and fails the run when its output is empty or the summaries add up to zero: no tests found (all six), or every test filtered out or skipped (pytest, `node --test`, mocha, Jest, Vitest). A `GATE_CMD` with one command that ran tests and another that ran none passes. Output without a known summary line passes, so this mode only catches the summaries it knows. Terminal colour codes and carriage returns are ignored.
+
+For a real count, set `GATE_COUNT_RE` to a bash regex for the lines that report tests: group 1 is the count on that line, a match with an empty or no group 1 counts as one, and the counts are added up. `GATE_MIN_TESTS` is the fewest tests the run must report (default 1; a value above 1 needs `GATE_COUNT_RE`). `GATE_MIN_TESTS=0` turns the check off.
+
+```
+GATE_CMD="cargo test" GATE_COUNT_RE='^test result: ok\. ([0-9]+) passed' two-engines-gate
+GATE_CMD="go test -v ./..." GATE_COUNT_RE='^--- PASS' two-engines-gate
+```
+
+go test and cargo test print a zero line for each package or target without tests even when others ran, so they have no built-in check and need `GATE_COUNT_RE`.
+
 ## What it does not do
 
 - It does not make the code correct. A review can miss things, and tests only check what they test.
@@ -71,7 +84,7 @@ two-engines-merge-check && git switch main && git merge --ff-only <branch>
 
 ## Tests
 
-`bash tests/run.sh` runs offline with the stand-in reviewer: syntax checks, a content scan of the tracked files, the demo in both directions, every review.sh exit code, gate.sh and merge-check.sh refusals, and install and uninstall on scratch HOME folders with a byte-for-byte comparison. The repository gates itself with `GATE_CMD="bash examples/local-check.sh"`.
+`bash tests/run.sh` runs offline with the stand-in reviewer: syntax checks, a content scan of the tracked files, the demo in both directions, every review.sh exit code, gate.sh and merge-check.sh refusals, and install and uninstall on scratch HOME folders with a byte-for-byte comparison. The repository gates itself with `GATE_CMD="bash examples/local-check.sh" GATE_COUNT_RE='^passed ([0-9]+), failed'`.
 
 ## Licence and the full kit
 
