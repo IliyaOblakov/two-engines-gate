@@ -162,6 +162,17 @@ go test and cargo test print a zero line for each package or target without test
 
 `bash tests/run.sh` runs offline with the stand-in reviewer: syntax checks, a content scan of the tracked files, the demo in both directions, every review.sh exit code, gate.sh and merge-check.sh refusals, and install and uninstall on scratch HOME folders with a byte-for-byte comparison. The repository gates itself with `GATE_CMD="bash examples/local-check.sh" GATE_COUNT_RE='^passed ([0-9]+), failed'`.
 
+## What the paid Two Engines Kit adds
+
+The paid Two Engines Kit is a larger set of files for the same way of working with Claude Code and Codex. On top of this gate, the current download adds:
+
+- `merge-pr.sh`, which refuses to call GitHub without a local pass record for the exact commit and tree, or when tracked files have uncommitted changes, then pushes, opens the PR, merges only if the head has not moved and checks that the merged tree matches the tested one.
+- A local CI skeleton with a lock and a pass record per commit, plus checks for Conventional Commit subjects, AI markers in commits and file length.
+- One rulebook both engines read, with hooks, settings and notes on which model and effort to use for which job.
+- An installer with previews, confirmation prompts and a backup of every file it changes, and an uninstaller that restores them byte for byte.
+
+Its GUIDE.md explains why each piece exists and the mistake that led to it. Reviews in the current kit download run on Codex only. Built on information gathered since the first Codex and Claude CLIs. Details are at https://rayastats.com/en/two-engines-kit.
+
 ## Licence and the full kit
 
 MIT, see `LICENSE`. Issues are welcome; there is no promised response time.
