@@ -157,6 +157,11 @@ go test and cargo test print a zero line for each package or target without test
 - `examples/local-check.sh`: a minimal `GATE_CMD` example.
 - `snippets/CLAUDE.md`, `snippets/AGENTS.md`, `docs/engines.md`: the parts specific to Claude Code and Codex.
 - `install.sh`, `uninstall.sh`, `tests/run.sh`.
+- `skills/two-engines-gate/SKILL.md`: the steps above as an Agent Skill for Claude Code and Codex.
+- `.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json`: the Claude Code plugin and its marketplace.
+- `.agents/plugins/marketplace.json`: the marketplace for Codex.
+- `plugin.json`, `.codex-plugin/plugin.json` and `assets/icon.svg`: the portable plugin manifest and the Codex plugin manifest with its icon.
+- `SECURITY.md`: how to report a security problem.
 
 ## Tests
 

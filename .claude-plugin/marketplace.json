@@ -1,0 +1,15 @@
+{
+  "name": "two-engines-gate",
+  "owner": {
+    "name": "RayaStats",
+    "url": "https://rayastats.com"
+  },
+  "description": "Marketplace for the two-engines-gate plugin.",
+  "plugins": [
+    {
+      "name": "two-engines-gate",
+      "source": "./",
+      "description": "Review and merge gate for Claude Code and Codex. Tests and a read-only review by the other engine are recorded for each commit, and the merge check refuses unless HEAD has both."
+    }
+  ]
+}
