@@ -21,6 +21,28 @@ BUILDER=codex bash demo.sh
 
 The demo builds a throwaway repository in a temporary folder and walks through one change: a commit with a bug the tests miss, the merge check refusing, a CHANGES REQUIRED review, a fix commit whose old evidence no longer counts, then tests and an ACCEPT on the new commit and the merge. A stand-in answers as the reviewer, so no model is called. `DEMO_REAL=1 bash demo.sh` calls the real reviewer CLI instead. The folder is removed at the end (`KEEP=1` keeps it).
 
+The lines below are copied from one run of `bash demo.sh` with the offline stand-in reviewer, whose answers are canned. Blank lines and the rest of the output are left out; all of it is under the collapsed heading below:
+
+```
+== 1. The claude builder committed sum.sh. Merge check before anything else
+merge-check: REFUSED: no test pass record for 2cef9bbe04c3; run gate.sh
+== 2. Tests pass on this commit (they miss the bug)
+gate: PASS on 2cef9bbe04c3, record .ai/tests/2cef9bbe04c3dd4727d2455e07c0ec420ecec7af.pass
+merge-check: REFUSED: no review verdict for 2cef9bbe04c3; run review.sh
+== 3. Read-only review by the other engine
+Verdict: CHANGES REQUIRED
+- blocker, sum.sh:3: the loop starts at the second argument, so 'bash sum.sh 3 4' prints 4, not 7. test.sh only checks 'sum 0 4', where the bug cannot show.
+merge-check: REFUSED: the verdict for 2cef9bbe04c3 is not a single ACCEPT
+== 4. The builder fixes it in a new commit. The old evidence does not carry over
+merge-check: REFUSED: no test pass record for 525000aeac20; run gate.sh
+== 5. Tests and a new review on the new commit
+gate: PASS on 525000aeac20, record .ai/tests/525000aeac2006842bc5de60fd03229f2f697203.pass
+Verdict: ACCEPT
+merge-check: OK: 525000aeac20 has a test pass and an ACCEPT from codex (builder claude)
+```
+
+`BUILDER=codex bash demo.sh` runs the same steps with the roles swapped, so the last line names claude as the reviewer and codex as the builder.
+
 <details>
 <summary>Output of one run of <code>bash demo.sh</code> (commit hashes and dates may differ between runs)</summary>
 
