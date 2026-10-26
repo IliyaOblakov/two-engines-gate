@@ -138,6 +138,67 @@ env STANDIN_ANSWER=accept "$R" >/dev/null 2>&1; echo three >> a.txt; git commit 
 cp "$v" ".ai/reviews/$(git rev-parse --short=12 HEAD).md"; env GATE_CMD="echo ok" "$G" >/dev/null 2>&1
 want 1 "verdict copied from an older commit" "$M"
 
+echo "== files hidden from git status: skip-worktree and assume-unchanged"
+hid="$tmp/hidden"; mkdir -p "$hid" && cd "$hid" && git init -q -b main && printf '.ai/\n' > .gitignore
+names=("plain.txt" "sp dir/with space.txt" "it's \$(x) \"q\".txt" "-dash.txt" $'line\nbreak.txt' "caf$(printf '\303\251').txt" $'a\037S ghost.txt')
+for f in "${names[@]}"; do mkdir -p "$(dirname -- "$f")"; echo one > "$f"; done
+mkdir -p .ai && echo note > .ai/note
+git add -A && git add -f .ai/note && git commit -qm "chore: first" && git switch -qc work && echo two >> plain.txt && git commit -qam "feat: second line"
+hh="$(git rev-parse HEAD)"
+hid_ok() { # hid_ok <label>: gate.sh, review.sh and merge-check.sh all accept the checkout
+  want 0 "$1: gate" env GATE_CMD="echo ok" "$G"
+  want 0 "$1: review" env STANDIN_ANSWER=accept "$R"
+  want 0 "$1: merge-check" "$M"
+}
+hid_refused() { # hid_refused <label> <kind> <file>: every script refuses, names the kind and the file, and keeps no evidence
+  local label="$1" kind="$2" file="$3" s
+  for s in "$M" "$R" "$G"; do
+    want 1 "$label: $(basename "$s") refuses" env GATE_CMD="echo ok" STANDIN_ANSWER=accept "$s"
+    grep -q -F -- "  $kind: \"${file//[[:cntrl:]]/?}\"" "$tmp/out" && ok || bad "$label: $(basename "$s") does not name $kind and the file"
+    grep -q -F -- "--no-$kind" "$tmp/out" && ok || bad "$label: $(basename "$s") does not say how to clear the flag"
+  done
+  [ ! -e ".ai/tests/$hh.pass" ] && [ ! -e ".ai/reviews/${hh:0:12}.md" ] && ok || bad "$label: evidence for the flagged checkout survived"
+}
+hid_ok "clean checkout"
+echo "changed" >> .ai/note; git update-index --skip-worktree .ai/note; hid_ok "flagged file under .ai/ is ignored like its changes"
+git update-index --no-skip-worktree .ai/note; git checkout -q -- .ai/note
+for kind in skip-worktree assume-unchanged; do
+  for f in "${names[@]}"; do
+    git update-index "--$kind" -- "$f"
+    hid_refused "$kind, unchanged, $f" "$kind" "$f"
+    git update-index "--no-$kind" -- "$f"
+    hid_ok "$kind cleared, $f"
+    git update-index "--$kind" -- "$f"; echo changed >> "$f"
+    [ -z "$(git status --porcelain)" ] && ok || bad "$kind, changed, $f: git status shows the change, so the case proves nothing"
+    hid_refused "$kind, changed, $f" "$kind" "$f"
+    git update-index "--no-$kind" -- "$f"
+    want 1 "$kind cleared but still changed, $f: gate" env GATE_CMD="echo ok" "$G"
+    git checkout -q -- "$f"
+    hid_ok "$kind cleared and restored, $f"
+  done
+done
+git update-index --skip-worktree -- plain.txt; git update-index --assume-unchanged -- plain.txt
+hid_refused "both flags" assume-unchanged plain.txt
+git update-index --no-assume-unchanged -- plain.txt
+hid_refused "only skip-worktree left" skip-worktree plain.txt
+git update-index --no-skip-worktree -- plain.txt
+hid_ok "both flags cleared"
+git update-index --skip-worktree -- plain.txt "sp dir/with space.txt"; env GATE_CMD="echo ok" "$G" > "$tmp/out" 2>&1
+[ "$(grep -c '^  skip-worktree: ' "$tmp/out")" = 2 ] && ok || bad "two flagged files were not both named"
+git update-index --no-skip-worktree -- plain.txt "sp dir/with space.txt"
+if git sparse-checkout set --no-cone plain.txt > /dev/null 2>&1; then
+  hid_refused "sparse checkout" skip-worktree "-dash.txt"; git sparse-checkout disable > /dev/null 2>&1
+  hid_ok "sparse checkout disabled"
+fi
+mkdir -p "$tmp/fakegit"; real_git="$(command -v git)"
+printf '#!/bin/sh\n[ "$1" = ls-files ] && exit 1\nexec "%s" "$@"\n' "$real_git" > "$tmp/fakegit/git"; chmod +x "$tmp/fakegit/git"
+for s in "$M" "$R" "$G"; do want 1 "git ls-files fails: $(basename "$s") refuses" env PATH="$tmp/fakegit:$PATH" GATE_CMD="echo ok" STANDIN_ANSWER=accept "$s"; done
+hid_ok "back to a clean checkout"
+flagged_fn() { sed -n '/^flagged() {/,/^}/p' "$1"; }
+[ -n "$(flagged_fn "$ROOT/bin/gate.sh")" ] && [ "$(flagged_fn "$ROOT/bin/gate.sh")" = "$(flagged_fn "$ROOT/bin/review.sh")" ] \
+  && [ "$(flagged_fn "$ROOT/bin/gate.sh")" = "$(flagged_fn "$ROOT/bin/merge-check.sh")" ] && ok || bad "the three scripts do not share the same flagged check"
+cd "$repo"
+
 echo "== install and uninstall on a scratch HOME"
 snap() { (cd "$1" && find . -printf '%y %m %p\n' | sort && find . -type f | sort | while read -r f; do echo "$f $(git hash-object "$f")"; done); }
 for setup in empty with-bin with-share; do
