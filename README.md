@@ -113,6 +113,8 @@ No install is needed to use it: every script runs from the clone, for example `p
 
 Add `.ai/` to the project's `.gitignore`. The scripts ignore changes under `.ai/` when they check for a clean checkout.
 
+The clean check also refuses when a tracked file carries the `skip-worktree` or `assume-unchanged` flag, because `git status` does not show edits to such a file. All three scripts run `git ls-files -v` and refuse when a line starts with `S` (skip-worktree) or a lowercase letter (assume-unchanged). The message names each file and the flag, for example `skip-worktree: "src/config.txt"`. Clear a flag with `git update-index --no-skip-worktree -- <file>` or `git update-index --no-assume-unchanged -- <file>`. A file that has both flags is listed as assume-unchanged until you clear that one, then as skip-worktree. A sparse checkout sets skip-worktree on every tracked file outside its patterns, so it is refused whenever it leaves a file out. Tracked files under `.ai/` are not checked, like their changes.
+
 ## Use it with Claude Code and Codex
 
 1. Paste `snippets/CLAUDE.md` into the project's `CLAUDE.md` and `snippets/AGENTS.md` into its `AGENTS.md`. They tell the builder to commit each change and stop, to leave `.ai/` alone and never to merge, and tell the reviewer to stay read-only.
@@ -160,7 +162,7 @@ go test and cargo test print a zero line for each package or target without test
 
 ## Tests
 
-`bash tests/run.sh` runs offline with the stand-in reviewer: syntax checks, a content scan of the tracked files, the demo in both directions, every review.sh exit code, gate.sh and merge-check.sh refusals, and install and uninstall on scratch HOME folders with a byte-for-byte comparison. The repository gates itself with `GATE_CMD="bash examples/local-check.sh" GATE_COUNT_RE='^passed ([0-9]+), failed'`.
+`bash tests/run.sh` runs offline with the stand-in reviewer: syntax checks, a content scan of the tracked files, the demo in both directions, every review.sh exit code, gate.sh and merge-check.sh refusals, all three scripts refusing files flagged skip-worktree or assume-unchanged (with spaces, quotes, line breaks and control characters in the file names), and install and uninstall on scratch HOME folders with a byte-for-byte comparison. The repository gates itself with `GATE_CMD="bash examples/local-check.sh" GATE_COUNT_RE='^passed ([0-9]+), failed'`.
 
 ## Licence and the full kit
 
