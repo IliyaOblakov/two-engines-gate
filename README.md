@@ -21,6 +21,28 @@ BUILDER=codex bash demo.sh
 
 The demo builds a throwaway repository in a temporary folder and walks through one change: a commit with a bug the tests miss, the merge check refusing, a CHANGES REQUIRED review, a fix commit whose old evidence no longer counts, then tests and an ACCEPT on the new commit and the merge. A stand-in answers as the reviewer, so no model is called. `DEMO_REAL=1 bash demo.sh` calls the real reviewer CLI instead. The folder is removed at the end (`KEEP=1` keeps it).
 
+The lines below are copied from one run of `bash demo.sh` with the offline stand-in reviewer, whose answers are canned. Blank lines and the rest of the output are left out; all of it is under the collapsed heading below:
+
+```
+== 1. The claude builder committed sum.sh. Merge check before anything else
+merge-check: REFUSED: no test pass record for 2cef9bbe04c3; run gate.sh
+== 2. Tests pass on this commit (they miss the bug)
+gate: PASS on 2cef9bbe04c3, record .ai/tests/2cef9bbe04c3dd4727d2455e07c0ec420ecec7af.pass
+merge-check: REFUSED: no review verdict for 2cef9bbe04c3; run review.sh
+== 3. Read-only review by the other engine
+Verdict: CHANGES REQUIRED
+- blocker, sum.sh:3: the loop starts at the second argument, so 'bash sum.sh 3 4' prints 4, not 7. test.sh only checks 'sum 0 4', where the bug cannot show.
+merge-check: REFUSED: the verdict for 2cef9bbe04c3 is not a single ACCEPT
+== 4. The builder fixes it in a new commit. The old evidence does not carry over
+merge-check: REFUSED: no test pass record for 525000aeac20; run gate.sh
+== 5. Tests and a new review on the new commit
+gate: PASS on 525000aeac20, record .ai/tests/525000aeac2006842bc5de60fd03229f2f697203.pass
+Verdict: ACCEPT
+merge-check: OK: 525000aeac20 has a test pass and an ACCEPT from codex (builder claude)
+```
+
+`BUILDER=codex bash demo.sh` runs the same steps with the roles swapped. Its last merge check reads `merge-check: OK: 525000aeac20 has a test pass and an ACCEPT from claude (builder codex)` (commit hashes can differ between runs).
+
 <details>
 <summary>Output of one run of <code>bash demo.sh</code> (commit hashes and dates may differ between runs)</summary>
 
@@ -143,6 +165,18 @@ GATE_CMD="go test -v ./..." GATE_COUNT_RE='^--- PASS' two-engines-gate
 ```
 
 go test and cargo test print a zero line for each package or target without tests even when others ran, so they have no built-in check and need `GATE_COUNT_RE`.
+
+### A narrowed test command still passes
+
+gate.sh records a pass when `GATE_CMD` exits 0 on a clean checkout and the test count check accepts its output. It does not know which tests the project has, so a command narrowed to fewer tests gets a pass when those tests pass. This reproduces with `node --test` (Node 20.19) in a scratch repository where `add()` returns the wrong result, with `test/add.test.js` for `add()` and `test/format.test.js` for another function. `GATE_CMD="node --test test/"` printed `gate: FAIL (exit 1)`. `GATE_CMD="node --test test/format.test.js"` printed `gate: PASS on <sha>` and wrote a pass record, because the one file it ran does not test `add()`. The zero-test check does not catch this, since one test ran. The `Command:` line in the pass record shows what was run, and merge-check.sh does not compare it with anything.
+
+Two measures reduce the risk. The first is to set `GATE_COUNT_RE` and set `GATE_MIN_TESTS` to the number of tests the project has. gate.sh then refuses a run whose output reports fewer tests than that. In the scratch repository this refuses the one-file command with `the output reports 1 tests, fewer than GATE_MIN_TESTS=2`. You have to raise the number when you add tests, and the check compares the total the output reports, so it does not show which tests ran:
+
+```
+GATE_CMD="node --test test/" GATE_COUNT_RE='^# pass ([0-9]+)$' GATE_MIN_TESTS=2 two-engines-gate
+```
+
+The second is the other engine's review of the diff. `review-prompt.md` asks it to check anything that weakens an existing check, which includes a test script narrowed in a commit. A narrowed `GATE_CMD` typed on the command line is not in the diff, so only the count check applies to it. A review is a model's reading of the diff and can miss things.
 
 ## What it does not do
 
