@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Usage: GATE_CMD="<your test command>" gate.sh [repo]   (default: the current directory)
-# Runs the test command on a clean checkout and writes the pass record .ai/tests/<HEAD>.pass only
+# Runs the test command on a clean checkout (no changed or untracked files, no tracked file flagged
+# skip-worktree or assume-unchanged) and writes the pass record .ai/tests/<HEAD>.pass only
 # after a clean pass on that exact commit. The record is removed before the run and stays removed
-# when the command fails, when HEAD moves, when the run leaves changed or untracked files, and
+# when the command fails, when HEAD moves, when the run leaves changed, untracked or flagged files, and
 # when the run shows that no test ran (so a run of zero tests is not a pass).
 # Env: GATE_CMD        the command to run, through bash -c, from the repository root (required)
 #      GATE_COUNT_RE   a bash regex for the lines that report tests; group 1 is the count on
@@ -13,14 +14,27 @@
 #                      GATE_COUNT_RE); 0 turns every test count check off
 # Exit: the test command's status; 1 for a refused run, too few tests or an unrecorded pass.
 set -uo pipefail
-case "${1:-}" in -h|--help) sed -n '2,14p' "$0"; exit 0 ;; esac
+case "${1:-}" in -h|--help) sed -n '2,15p' "$0"; exit 0 ;; esac
 die() { echo "gate: $*" >&2; exit 1; }
 cd "${1:-.}" || exit 1
 root="$(git rev-parse --show-toplevel 2>/dev/null)" || die "not a git repository"
 cd "$root" || exit 1
 head="$(git rev-parse --verify HEAD 2>/dev/null)" || die "no commit to test"
-clean() { # fails on changed or untracked files outside .ai/, and when git status itself fails
-  local out; out="$(git status --porcelain --untracked-files=all -- . ':(exclude).ai')" && [ -z "$out" ]
+flagged() { # lists tracked files marked skip-worktree or assume-unchanged, which git status never shows
+  local rec name flag n=0 ended=0              # git ls-files -v: S = skip-worktree, a lowercase letter = assume-unchanged
+  while IFS= read -r -d '' rec; do             # NUL-separated records; END after a successful git can never equal a record ("<tag> <name>")
+    [ "$rec" != END ] || { ended=1; continue; }
+    case "${rec:0:1}" in S) flag=skip-worktree ;; [[:lower:]]) flag=assume-unchanged ;; *) continue ;; esac
+    name="${rec:2}"; n=$((n + 1))
+    [ "$n" -gt 1 ] || echo "files that git status does not show are flagged, so changes to them would go unseen:" >&2
+    printf '  %s: "%s"\n' "$flag" "${name//[[:cntrl:]]/?}" >&2
+  done < <(git ls-files -v -z -- . ':(exclude).ai' && printf 'END\0')
+  [ "$ended" -eq 1 ] || return 2
+  [ "$n" -eq 0 ] || echo "clear a flag with: git update-index --no-skip-worktree -- <file>  or  git update-index --no-assume-unchanged -- <file>" >&2
+  [ "$n" -eq 0 ]
+}
+clean() { # fails on changed or untracked files outside .ai/, on flagged files, and when git itself fails
+  local out; out="$(git status --porcelain --untracked-files=all -- . ':(exclude).ai')" && [ -z "$out" ] && flagged
 }
 dir=".ai/tests" record=".ai/tests/$head.pass" log=".ai/tests/${head:0:12}.log"
 mkdir -p "$dir" || die "cannot create $dir"
@@ -73,13 +87,13 @@ too_few() { # prints why the run reported too few tests; silent when it reported
   if [ -n "$count_re" ]; then [ "$n" -ge "$min" ] || echo "the output reports $n tests, fewer than GATE_MIN_TESTS=$min"
   elif [ "$seen" = 1 ] && [ "$n" = 0 ]; then echo "the test summaries in the output show that no test ran"; fi
 }
-clean || die "REFUSED: uncommitted changes or untracked files (or git status failed); commit or remove them first"
+clean || die "REFUSED: uncommitted changes, untracked files or flagged files (or git failed); commit, remove or unflag them first"
 echo "gate: running '$GATE_CMD' on ${head:0:12}"
 bash -c "$GATE_CMD" > "$log" 2>&1
 status=$?
 if [ "$status" -eq 0 ]; then
   if [ "$(git rev-parse HEAD)" != "$head" ]; then echo "gate: HEAD moved during the run" >&2; status=1
-  elif ! clean; then echo "gate: the run left changed or untracked files (or git status failed)" >&2; status=1
+  elif ! clean; then echo "gate: the run left changed, untracked or flagged files (or git failed)" >&2; status=1
   else
     why="$(too_few)" || why="${why:-the test count check failed}"
     [ -z "$why" ] || { echo "gate: $why; set GATE_COUNT_RE or GATE_MIN_TESTS (README)" >&2; status=1; }
