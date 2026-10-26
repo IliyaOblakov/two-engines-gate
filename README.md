@@ -41,7 +41,7 @@ Verdict: ACCEPT
 merge-check: OK: 525000aeac20 has a test pass and an ACCEPT from codex (builder claude)
 ```
 
-`BUILDER=codex bash demo.sh` runs the same steps with the roles swapped, so the last line names claude as the reviewer and codex as the builder.
+`BUILDER=codex bash demo.sh` runs the same steps with the roles swapped. Its last merge check reads `merge-check: OK: 525000aeac20 has a test pass and an ACCEPT from claude (builder codex)` (commit hashes can differ between runs).
 
 <details>
 <summary>Output of one run of <code>bash demo.sh</code> (commit hashes and dates may differ between runs)</summary>
@@ -163,6 +163,18 @@ GATE_CMD="go test -v ./..." GATE_COUNT_RE='^--- PASS' two-engines-gate
 ```
 
 go test and cargo test print a zero line for each package or target without tests even when others ran, so they have no built-in check and need `GATE_COUNT_RE`.
+
+### A narrowed test command still passes
+
+gate.sh records a pass when `GATE_CMD` exits 0 on a clean checkout and the test count check accepts its output. It does not know which tests the project has, so a command narrowed to fewer tests gets a pass when those tests pass. This reproduces with `node --test` (Node 20.19) in a scratch repository where `add()` returns the wrong result, with `test/add.test.js` for `add()` and `test/format.test.js` for another function. `GATE_CMD="node --test test/"` printed `gate: FAIL (exit 1)`. `GATE_CMD="node --test test/format.test.js"` printed `gate: PASS on <sha>` and wrote a pass record, because the one file it ran does not test `add()`. The zero-test check does not catch this, since one test ran. The `Command:` line in the pass record shows what was run, and merge-check.sh does not compare it with anything.
+
+Two measures reduce the risk. The first is to set `GATE_COUNT_RE` and set `GATE_MIN_TESTS` to the number of tests the project has. gate.sh then refuses a run whose output reports fewer tests than that. In the scratch repository this refuses the one-file command with `the output reports 1 tests, fewer than GATE_MIN_TESTS=2`. You have to raise the number when you add tests, and the check compares the total the output reports, so it does not show which tests ran:
+
+```
+GATE_CMD="node --test test/" GATE_COUNT_RE='^# pass ([0-9]+)$' GATE_MIN_TESTS=2 two-engines-gate
+```
+
+The second is the other engine's review of the diff. `review-prompt.md` asks it to check anything that weakens an existing check, which includes a test script narrowed in a commit. A narrowed `GATE_CMD` typed on the command line is not in the diff, so only the count check applies to it. A review is a model's reading of the diff and can miss things.
 
 ## What it does not do
 
