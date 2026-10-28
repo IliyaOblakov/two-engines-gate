@@ -33,10 +33,23 @@ REVIEWER="${REVIEWER:-$other}"
 [ "$REVIEWER" = "$other" ] || die "the reviewer must be the other engine ($other), not '$REVIEWER'"
 [ -f "$prompt_file" ] || die "prompt file not found: $prompt_file"
 
-clean() { # fails on changed or untracked files outside .ai/, and when git status itself fails
-  local out; out="$(git status --porcelain --untracked-files=all -- . ':(exclude).ai')" && [ -z "$out" ]
+flagged() { # lists tracked files marked skip-worktree or assume-unchanged, which git status never shows
+  local rec name flag n=0 ended=0              # git ls-files -v: S = skip-worktree, a lowercase letter = assume-unchanged
+  while IFS= read -r -d '' rec; do             # NUL-separated records; END after a successful git can never equal a record ("<tag> <name>")
+    [ "$rec" != END ] || { ended=1; continue; }
+    case "${rec:0:1}" in S) flag=skip-worktree ;; [[:lower:]]) flag=assume-unchanged ;; *) continue ;; esac
+    name="${rec:2}"; n=$((n + 1))
+    [ "$n" -gt 1 ] || echo "files that git status does not show are flagged, so changes to them would go unseen:" >&2
+    printf '  %s: "%s"\n' "$flag" "${name//[[:cntrl:]]/?}" >&2
+  done < <(git ls-files -v -z -- . ':(exclude).ai' && printf 'END\0')
+  [ "$ended" -eq 1 ] || return 2
+  [ "$n" -eq 0 ] || echo "clear a flag with: git update-index --no-skip-worktree -- <file>  or  git update-index --no-assume-unchanged -- <file>" >&2
+  [ "$n" -eq 0 ]
 }
-clean || die "REFUSED: uncommitted changes or untracked files (or git status failed); commit or remove them first"
+clean() { # fails on changed or untracked files outside .ai/, on flagged files, and when git itself fails
+  local out; out="$(git status --porcelain --untracked-files=all -- . ':(exclude).ai')" && [ -z "$out" ] && flagged
+}
+clean || die "REFUSED: uncommitted changes, untracked files or flagged files (or git failed); commit, remove or unflag them first"
 if [ -n "${REVIEW_BASE:-}" ]; then base="$REVIEW_BASE"
 elif git rev-parse -q --verify origin/main >/dev/null; then base=origin/main
 else base=main; fi
@@ -72,7 +85,7 @@ fi
 echo "$REVIEWER exit $status" >> "$log"
 [ "$status" -eq 0 ] || die "REVIEW FAILED: $REVIEWER exited $status; no verdict for ${head:0:12} (log: $log)"
 [ "$(git rev-parse HEAD)" = "$head" ] || die "REVIEW VOID: HEAD moved during the review"
-clean || die "REVIEW VOID: files changed during the review (or git status failed)"
+clean || die "REVIEW VOID: files changed or were flagged during the review (or git failed)"
 [ -s "$work/last" ] || die "NO VERDICT: $REVIEWER wrote no final message"
 count="$(grep -c '^Verdict:' "$work/last")"
 [ "$count" -eq 1 ] || die "NO VERDICT: the final message needs exactly one Verdict: line, found $count"
