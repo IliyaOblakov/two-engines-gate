@@ -131,6 +131,8 @@ Exit codes of review.sh: 0 for `Verdict: ACCEPT`, 2 for `Verdict: CHANGES REQUIR
 
 From a clone, run `bash install.sh`. It copies the scripts and the review prompt to `~/.local/share/two-engines-gate` and adds `two-engines-review`, `two-engines-gate` and `two-engines-merge-check` to `~/.local/bin` (`PREFIX` changes `~/.local`). It stops without changing anything when one of those files already exists. `bash uninstall.sh` removes exactly what the install created; a file edited after the install, or a folder that also holds other files, is kept and reported, and running it again after dealing with those finishes the job.
 
+As a plugin, the repository is its own marketplace for both CLIs. In Claude Code, run `claude plugin marketplace add IliyaOblakov/two-engines-gate` and then `claude plugin install two-engines-gate@two-engines-gate`. In Codex, run `codex plugin marketplace add IliyaOblakov/two-engines-gate` and then `codex plugin add two-engines-gate@two-engines-gate`. Claude Code puts the plugin's `bin/` folder on the Bash tool's PATH, so `gate.sh`, `review.sh` and `merge-check.sh` run by name. Codex lists the skill, and the scripts are in the plugin's `bin/` folder, two levels above the skill's `SKILL.md`, so they run by that path.
+
 No install is needed to use it: every script runs from the clone, for example `path/to/two-engines-gate/bin/review.sh`.
 
 Add `.ai/` to the project's `.gitignore`. The scripts ignore changes under `.ai/` when they check for a clean checkout.

@@ -1,6 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "two-engines-gate",
+  "version": "0.1.0",
   "description": "Review and merge gate for Claude Code and Codex. Tests and a read-only review by the other engine are recorded for each commit, and the merge check refuses unless HEAD has both.",
   "author": {
     "name": "RayaStats",

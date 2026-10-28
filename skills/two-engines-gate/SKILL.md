@@ -20,8 +20,9 @@ Three bash scripts from the two-engines-gate repository check one commit before 
 - After `bash install.sh` in a clone of two-engines-gate, the installed names above are in `~/.local/bin`.
 - Without an install, run each script by its path in the clone, for example `path/to/two-engines-gate/bin/review.sh`.
 - When two-engines-gate is enabled as a Claude Code plugin, its `bin/` folder is on the Bash tool's PATH, so `gate.sh`, `review.sh` and `merge-check.sh` run by name.
+- When two-engines-gate is installed as a Codex plugin, the scripts are in the `bin/` folder two levels above this `SKILL.md` (`../../bin`). Run them by that path.
 
-The steps below use the installed names; with the other two ways, use the script path or name instead.
+The steps below use the installed names; with the other ways, use the script path or name instead.
 
 ## Steps
 
