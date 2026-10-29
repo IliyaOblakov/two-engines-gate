@@ -213,4 +213,4 @@ Its GUIDE.md explains why each piece exists and the mistake that led to it. Revi
 
 MIT, see `LICENSE`. Issues are welcome; there is no promised response time.
 
-This repository is the free review and merge gate from the Two Engines Kit, described at https://rayastats.com/en/two-engines-kit.
+This repository is the free review and merge gate from the Two Engines Kit, described at [rayastats.com/en/two-engines-kit](https://rayastats.com/en/two-engines-kit?utm_source=github&utm_medium=two-engines-gate&utm_campaign=readme).
