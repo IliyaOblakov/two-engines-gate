@@ -1,0 +1,20 @@
+{
+  "name": "two-engines-gate",
+  "interface": {
+    "displayName": "Two Engines Gate"
+  },
+  "plugins": [
+    {
+      "name": "two-engines-gate",
+      "source": {
+        "source": "local",
+        "path": "./"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

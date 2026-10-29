@@ -1,0 +1,14 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "two-engines-gate",
+  "version": "0.1.0",
+  "description": "Review and merge gate for Claude Code and Codex. Tests and a read-only review by the other engine are recorded for each commit, and the merge check refuses unless HEAD has both.",
+  "author": {
+    "name": "RayaStats",
+    "url": "https://rayastats.com"
+  },
+  "homepage": "https://github.com/IliyaOblakov/two-engines-gate",
+  "repository": "https://github.com/IliyaOblakov/two-engines-gate",
+  "license": "MIT",
+  "keywords": ["code-review", "merge-gate", "git", "codex", "claude-code"]
+}

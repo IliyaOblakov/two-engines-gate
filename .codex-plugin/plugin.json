@@ -1,0 +1,28 @@
+{
+  "name": "two-engines-gate",
+  "version": "0.1.0",
+  "description": "Review and merge gate for Claude Code and Codex. Tests and a read-only review by the other engine are recorded for each commit, and the merge check refuses unless HEAD has both.",
+  "author": {
+    "name": "RayaStats",
+    "url": "https://rayastats.com"
+  },
+  "homepage": "https://github.com/IliyaOblakov/two-engines-gate",
+  "repository": "https://github.com/IliyaOblakov/two-engines-gate",
+  "license": "MIT",
+  "keywords": [
+    "code-review",
+    "merge-gate",
+    "git",
+    "codex",
+    "claude-code"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Two Engines Gate",
+    "shortDescription": "Tests and a review by the other engine for each commit before it merges",
+    "longDescription": "Three bash scripts check one commit before it merges. gate.sh runs the project's tests on a clean checkout and records a pass for that commit. review.sh sends the commits and the diff to the engine that did not write them, read-only, and saves the verdict under the commit. merge-check.sh refuses unless the checkout is clean and HEAD has a pass and an ACCEPT from the other engine. Nothing is pushed or merged by the scripts.",
+    "developerName": "RayaStats",
+    "websiteURL": "https://github.com/IliyaOblakov/two-engines-gate",
+    "composerIcon": "./assets/icon.svg"
+  }
+}
