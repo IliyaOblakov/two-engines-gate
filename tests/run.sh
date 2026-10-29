@@ -137,6 +137,10 @@ env STANDIN_ANSWER=changes "$R" >/dev/null 2>&1; want 1 "changes required" "$M"
 env STANDIN_ANSWER=accept "$R" >/dev/null 2>&1; echo three >> a.txt; git commit -qam "fix: third line"
 cp "$v" ".ai/reviews/$(git rev-parse --short=12 HEAD).md"; env GATE_CMD="echo ok" "$G" >/dev/null 2>&1
 want 1 "verdict copied from an older commit" "$M"
+env STANDIN_ANSWER=accept "$R" >/dev/null 2>&1; want 0 "clean tree with a pass and an ACCEPT" "$M"
+dirty() { want 1 "$1" "$M"; has "$tmp/out" "uncommitted changes or untracked files" "$1: refused for another reason"; git -C "$repo" reset -q --hard && git -C "$repo" clean -qfd; }
+echo four >> a.txt; dirty "modified tracked file"; echo stray > stray.txt; dirty "untracked file"
+echo staged >> a.txt && git add a.txt; dirty "staged change"; want 0 "clean again after the dirty cases" "$M"
 
 echo "== files hidden from git status: skip-worktree and assume-unchanged"
 hid="$tmp/hidden"; mkdir -p "$hid" && cd "$hid" && git init -q -b main && printf '.ai/\n' > .gitignore
